@@ -92,3 +92,30 @@ documents when eligible billable fields are present:
 The rule blocks the webhook before BC creation when either required INT charge
 is missing or a third INT charge would be assigned without an approved mapping.
 This prevents a partial or incorrectly bundled ALB INT invoice.
+
+
+## Mexico USD ocean invoice corrections
+
+The MX / USD / OCEAN/FCL path groups Emergency Surcharge into Ocean Freight
+and Customs Broker Origin into Origin Charges. Each group retains its original
+ClickUp source fields. Other fees sharing the same BC item remain separate.
+INT lines expect 0% VAT; NAT lines expect 16%. BC line and header readback must
+match the preview before posting and again before stamping.
+
+The due date is the canonical shipment ETA (field
+`736ddd1d-33da-4ff8-a128-f7f3f738987d`, Mexico City calendar date) plus the
+customer's live BC payment-term days. Only calendar-day formulas such as `30D`
+or `<30D>` are supported. Missing ETA, unsupported terms, discount terms, or
+conflicting customer payment-term identities stop preparation. Invoice/posting
+dates retain their existing behavior. After payment-field validation and line
+creation, the due date is reapplied with the current BC ETag and verified.
+
+Existing MX ocean invoices stop at duplicate detection; they cannot be silently
+reused or replaced by the generic retry flow. TAGOMAGO's approved USD ocean list
+is distinct from its restricted warehouse/distribution lifecycle. Mexico email
+must use its native delivery route, not the Guatemala report action.
+
+Deploying this code does not switch the production default market from GT,
+enable a new Mexico automation, or authorize invoice cancellation/reissue.
+Use a reviewed replacement procedure for existing stamped invoices. Preserve
+all existing production environment flags when deploying this correction.

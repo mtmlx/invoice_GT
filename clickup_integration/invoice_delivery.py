@@ -12,6 +12,7 @@ from typing import Any
 from business_central_client.client import BusinessCentralClient
 from clickup_integration.client import ClickUpClient
 from clickup_integration.invoice_sync import InvoiceAutomationSettings
+from clickup_integration.tagomago_boundary import generic_invoice_tagomago_blocker
 
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,8 @@ DEFAULT_FORBIDDEN_PDF_TEXT = (
 DEFAULT_MX_REQUIRED_PDF_TEXT = (
     "CFDI",
     "Folio Fiscal",
-    "Sello Digital",
+    "Sello CFDI",
+    "Sello SAT",
     "Este documento es una representación impresa de un CFDI",
 )
 
@@ -66,6 +68,18 @@ def send_issued_invoice_customer_emails(
     settings: InvoiceAutomationSettings,
 ) -> dict[str, Any]:
     """Validate the BC PDF, then submit each FEL-stamped invoice through BC Email."""
+    blocker = generic_invoice_tagomago_blocker(
+        invoice_result=invoice_result,
+        market=str(invoice_result.get("market") or settings.supported_market),
+        customer_field_names=settings.bc_customer_number_field_names,
+    )
+    if blocker:
+        raise ValueError(blocker["message"])
+    if str(invoice_result.get("market") or settings.supported_market).upper() == "MX":
+        raise ValueError(
+            "Mexico invoice email requires the native Mexico delivery route; "
+            "SendApprovedInvoiceEmail renders the Guatemala report."
+        )
     created_invoices = delivery_invoices_from_result(invoice_result)
     market = _resolve_delivery_market(invoice_result, settings=settings)
     finalized_by_number = {
@@ -165,6 +179,14 @@ def finalize_clickup_issued_invoices(
     workspace_id: str | None,
     mark_status: bool = True,
 ) -> dict[str, Any]:
+    blocker = generic_invoice_tagomago_blocker(
+        clickup_summary=clickup_summary,
+        invoice_result=invoice_result,
+        market=str(invoice_result.get("market") or settings.supported_market),
+        customer_field_names=settings.bc_customer_number_field_names,
+    )
+    if blocker:
+        raise ValueError(blocker["message"])
     created_invoices = delivery_invoices_from_result(invoice_result)
 
     market = _resolve_delivery_market(invoice_result, settings=settings)

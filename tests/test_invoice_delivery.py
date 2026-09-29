@@ -303,7 +303,8 @@ def test_validate_invoice_pdf_layout_accepts_mx_cfdi_markers() -> None:
         "Factura",
         "Version CFDI: 4.0",
         "Folio Fiscal",
-        "Sello Digital del CFDI",
+        "Sello CFDI",
+        "Sello SAT",
         "Este documento es una representacion impresa de un CFDI",
     )
 
@@ -348,3 +349,14 @@ def test_send_customer_email_blocks_incomplete_native_bc_evidence(bc, error) -> 
             invoice_result=finalized_invoice_result(),
             settings=make_settings(),
         )
+
+
+def test_mexico_email_never_uses_guatemala_report_action():
+    bc = FakeEmailBC()
+    with pytest.raises(ValueError, match="native Mexico delivery route"):
+        send_issued_invoice_customer_emails(
+            bc_client=bc, invoice_result={"market": "MX"},
+            settings=replace(make_settings(), supported_market="MX"),
+        )
+    assert bc.sent_row_ids == []
+    assert bc.audit_lookup_ids == []

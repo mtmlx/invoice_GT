@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from business_central_client.client import BusinessCentralClient
+from clickup_integration import mx_ocean_policy
 from clickup_integration.customer_rules import field_value
 from clickup_integration.mapping import resolve_dropdown_field
+from clickup_integration.tagomago_boundary import generic_invoice_tagomago_blocker
 from clickup_integration.writeback import prepare_clickup_bc_invoice_writeback
 
 
@@ -513,6 +515,20 @@ def prepare_clickup_bc_sales_invoice_preview(
             "task_status": task_status,
         }
 
+    product_for_gate = _resolve_product_for_invoice_gate(custom_fields, config)
+    ocean_policy = None
+    if mx_ocean_policy.applies(market=market, currency=currency, product=product_for_gate):
+        try:
+            charge_inputs = mx_ocean_policy.group_charges(charge_inputs)
+            terms = bc_client.get_entity("paymentTerms", payment_terms_id, market=market) if payment_terms_id else {}
+            ocean_policy = mx_ocean_policy.credit_policy(custom_fields, terms, payment_terms_id)
+            if terms.get("code") != market_invoice_settings.get("paymentTermsCode"):
+                raise ValueError("BC customer payment terms ID and payment terms code disagree.")
+            eta_date = date.fromisoformat(ocean_policy["eta_date"])
+        except Exception as exc:
+            return {"status": "mx_ocean_policy_failed", "message": str(exc),
+                    "market": market, "currency": currency, "task_status": task_status}
+
     active_charges = [charge for charge in charge_inputs if charge.get("amount") is not None and charge["amount"] > 0]
     if not active_charges:
         missing_fields.append(missing_charge_label)
@@ -591,6 +607,7 @@ def prepare_clickup_bc_sales_invoice_preview(
                     "description": charge["description"],
                     "description_override": charge.get("description_override"),
                     "tax_group": charge.get("tax_group"),
+                    "source_components": charge.get("source_components"),
                 }
             )
             continue
@@ -669,6 +686,13 @@ def prepare_clickup_bc_sales_invoice_preview(
         "postingDate": posting_date.isoformat(),
         "paymentTermsId": payment_terms_id,
     }
+    if ocean_policy:
+        header_payload["dueDate"] = ocean_policy["due_date"]
+        try:
+            ocean_policy["vat_breakdown"] = mx_ocean_policy.vat_breakdown(line_sources)
+        except ValueError as exc:
+            return {"status": "mx_ocean_policy_failed", "message": str(exc),
+                    "market": market, "currency": currency, "task_status": task_status}
     if customer_id:
         header_payload["customerId"] = customer_id
     if customer_number:
@@ -765,6 +789,8 @@ def prepare_clickup_bc_sales_invoice_preview(
     if duplicate_invoices:
         return {
             "status": "duplicate_invoice",
+            "mx_ocean_policy": ocean_policy,
+            "source_list_id": (clickup_summary.get("list") or {}).get("id"),
             "message": "One or more Business Central sales invoices already exist for this shipment reference.",
             "market": market,
             "currency": currency,
@@ -783,6 +809,8 @@ def prepare_clickup_bc_sales_invoice_preview(
 
     return {
         "status": "dry_run_ready",
+        "mx_ocean_policy": ocean_policy,
+        "source_list_id": (clickup_summary.get("list") or {}).get("id"),
         "market": market,
         "currency": currency,
         "task_status": task_status,
@@ -808,6 +836,19 @@ def prepare_clickup_bc_sales_invoice_preview(
     }
 
 
+def _generic_tagomago_blocked_result(blocker: dict[str, str]) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        **blocker,
+        "stamp_attempted": False,
+        "email_attempted": False,
+        "clickup_writeback_attempted": False,
+        "created_invoice": None,
+        "created_invoices": [],
+        "created_lines": [],
+    }
+
+
 def apply_clickup_bc_sales_invoice(
     *,
     clickup_summary: dict[str, Any],
@@ -816,12 +857,31 @@ def apply_clickup_bc_sales_invoice(
     today: date | None = None,
 ) -> dict[str, Any]:
     config = settings or InvoiceAutomationSettings.from_env()
+    source_blocker = generic_invoice_tagomago_blocker(
+        clickup_summary=clickup_summary,
+        market=config.supported_market,
+        customer_field_names=config.bc_customer_number_field_names,
+    )
+    if source_blocker:
+        return _generic_tagomago_blocked_result(source_blocker)
     preview = prepare_clickup_bc_sales_invoice_preview(
         clickup_summary=clickup_summary,
         bc_client=bc_client,
         settings=config,
         today=today,
     )
+    resolved_blocker = generic_invoice_tagomago_blocker(
+        clickup_summary=clickup_summary,
+        invoice_result=preview,
+        market=str(preview.get("market") or config.supported_market),
+        customer_field_names=config.bc_customer_number_field_names,
+    )
+    if resolved_blocker:
+        return {
+            **preview,
+            **_generic_tagomago_blocked_result(resolved_blocker),
+        }
+
     if preview.get("status") != "dry_run_ready":
         logger.info(
             "Invoice creation skipped task_id=%s status=%s message=%s",
@@ -932,6 +992,23 @@ def apply_clickup_bc_sales_invoice(
                 "created_lines": created_lines,
             }
 
+        if preview.get("mx_ocean_policy"):
+            try:
+                # Payment-term validation and line insertion may recalculate the date.
+                draft = bc_client.get_entity("salesInvoices", created_invoice["id"], market=preview["market"])
+                etag = draft.get("@odata.etag")
+                if not etag:
+                    raise ValueError("BC draft readback is missing its concurrency ETag.")
+                bc_client.patch_entity("salesInvoices", created_invoice["id"],
+                                       {"dueDate": preview["mx_ocean_policy"]["due_date"]},
+                                       market=preview["market"], if_match=etag)
+                draft = _verify_mx_ocean_invoice(bc_client, created_invoice["id"], preview["market"], proposed_invoice)
+                created_invoices[-1].update(draft)
+            except Exception as exc:
+                return {**preview, "status": "failed_partial", "failed_stage": "verify_mx_ocean_draft",
+                        "message": str(exc), "created_invoice": created_invoices[-1],
+                        "created_invoices": created_invoices, "created_lines": created_lines}
+
         logger.info(
             "Created BC sales invoice task_id=%s reference=%s invoice_group=%s invoice_id=%s invoice_number=%s",
             clickup_summary.get("task_id"),
@@ -968,10 +1045,22 @@ def issue_clickup_bc_sales_invoice(
     settings: InvoiceAutomationSettings | None = None,
     today: date | None = None,
 ) -> dict[str, Any]:
+    config = settings or InvoiceAutomationSettings.from_env()
+    source_blocker = generic_invoice_tagomago_blocker(
+        clickup_summary=clickup_summary,
+        market=config.supported_market,
+        customer_field_names=config.bc_customer_number_field_names,
+    )
+    if source_blocker:
+        return {
+            **_generic_tagomago_blocked_result(source_blocker),
+            "completed_stages": [],
+            "failed_stage": "tagomago_boundary",
+        }
     result = apply_clickup_bc_sales_invoice(
         clickup_summary=clickup_summary,
         bc_client=bc_client,
-        settings=settings,
+        settings=config,
         today=today,
     )
     completed_stages: list[str] = []
@@ -983,7 +1072,6 @@ def issue_clickup_bc_sales_invoice(
             "failed_stage": result.get("failed_stage") or "create_sales_invoice",
         }
 
-    config = settings or InvoiceAutomationSettings.from_env()
     market = result["market"]
     completed_stages.append("reuse_existing_posted_invoice" if retry_existing_posted_invoices else "create_sales_invoice")
     posted_invoices: list[dict[str, Any]] = []
@@ -1001,6 +1089,11 @@ def issue_clickup_bc_sales_invoice(
                 if not invoice_id:
                     raise ValueError("Created invoice is missing its Business Central id.")
 
+                if result.get("mx_ocean_policy"):
+                    current_stage = "verify_mx_ocean_before_post"
+                    proposed = next(p for p in result["proposed_bc_invoices"] if p["invoice_group"] == invoice_group)
+                    _verify_mx_ocean_invoice(bc_client, invoice_id, market, proposed)
+                    current_stage = "post_sales_invoice"
                 post_response = bc_client.post_sales_invoice(invoice_id, market=market)
                 posted_invoice = _resolve_posted_sales_invoice_after_post(
                     bc_client=bc_client,
@@ -1016,6 +1109,11 @@ def issue_clickup_bc_sales_invoice(
                 )
 
             completed_stages.append("post_sales_invoice")
+            if result.get("mx_ocean_policy"):
+                current_stage = "verify_mx_ocean_after_post"
+                for posted_invoice in posted_invoices:
+                    proposed = next(p for p in result["proposed_bc_invoices"] if p["invoice_group"] == posted_invoice["invoice_group"])
+                    _verify_mx_ocean_invoice(bc_client, posted_invoice["id"], market, proposed)
 
         for posted_invoice in posted_invoices:
             current_stage = "sync_fel_descriptions"
@@ -1135,7 +1233,18 @@ def issue_clickup_bc_sales_invoice(
     }
 
 
+def _verify_mx_ocean_invoice(bc_client, invoice_id, market, proposed):
+    invoice = bc_client.get_entity("salesInvoices", invoice_id, market=market)
+    lines = bc_client.get_posted_sales_invoice_lines(invoice_id, market=market)
+    mx_ocean_policy.verify_invoice(invoice, lines, proposed["proposed_bc_payload"], proposed["proposed_bc_line_payloads"])
+    return invoice
+
+
 def _existing_duplicate_invoices_for_retry(result: dict[str, Any]) -> list[dict[str, Any]]:
+    # An existing fiscal document is not permission to reissue or reuse a stale
+    # pre-policy invoice. Corrections require a separately reviewed replacement.
+    if result.get("mx_ocean_policy"):
+        return []
     if result.get("status") != "duplicate_invoice":
         return []
 
