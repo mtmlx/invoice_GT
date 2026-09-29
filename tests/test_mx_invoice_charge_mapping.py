@@ -19,4 +19,3 @@ def test_mx_ocean_freight_uses_the_live_bc_item_description() -> None:
     freight = mappings["Freight (Ocean/Truck/Air)"]
     assert freight.bc_item_number == "INT000000026"
     assert freight.bc_description == "TRANSPORTE MARITIMO"
-
