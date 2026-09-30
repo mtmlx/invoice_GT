@@ -97,7 +97,7 @@ def invoice_sync_readiness() -> dict[str, Any]:
         "market": settings.supported_market,
         "currency": settings.supported_currency,
         "apply_mode": _env_bool("CLICKUP_INVOICE_WEBHOOK_APPLY", default=False),
-        "customer_email_enabled": should_send_invoice_customer_email(),
+        "customer_email_enabled": should_send_invoice_customer_email(settings.supported_market),
         "ready_status": settings.ready_status,
         "ok_finops_status": settings.ok_finops_status,
         "charge_mapping_count": len(settings.charge_mappings),
@@ -124,7 +124,7 @@ def storage_invoice_sync_readiness() -> dict[str, Any]:
         "status": "not_ready" if missing_runtime_config else "ready",
         "missing_runtime_config": missing_runtime_config,
         "apply_mode": _env_bool("CLICKUP_STORAGE_INVOICE_WEBHOOK_APPLY", default=False),
-        "customer_email_enabled": should_send_invoice_customer_email(),
+        "customer_email_enabled": should_send_invoice_customer_email(invoice_settings.supported_market),
         "market": invoice_settings.supported_market,
         "currency": invoice_settings.supported_currency,
         "required_invoice_status": storage_settings.required_invoice_status,
@@ -159,7 +159,7 @@ def demurrage_invoice_sync_readiness() -> dict[str, Any]:
         "status": "not_ready" if missing_runtime_config else "ready",
         "missing_runtime_config": missing_runtime_config,
         "apply_mode": _env_bool("CLICKUP_DEMURRAGE_INVOICE_WEBHOOK_APPLY", default=False),
-        "customer_email_enabled": should_send_invoice_customer_email(),
+        "customer_email_enabled": should_send_invoice_customer_email(invoice_settings.supported_market),
         "market": invoice_settings.supported_market,
         "currency": invoice_settings.supported_currency,
         "required_invoice_status": demurrage_settings.required_invoice_status,
@@ -188,7 +188,7 @@ def inspection_invoice_sync_readiness() -> dict[str, Any]:
         "status": "not_ready" if missing_runtime_config else "ready",
         "missing_runtime_config": missing_runtime_config,
         "apply_mode": _env_bool("INSPECTION_INVOICE_WEBHOOK_APPLY", default=False),
-        "customer_email_enabled": should_send_invoice_customer_email(),
+        "customer_email_enabled": should_send_invoice_customer_email(os.getenv("INSPECTION_INVOICE_MARKET", "GT").strip().upper() or "GT"),
         "market": os.getenv("INSPECTION_INVOICE_MARKET", "GT").strip().upper() or "GT",
         "currency": os.getenv("INSPECTION_INVOICE_CURRENCY", "USD").strip().upper() or "USD",
         "payload_field_id": os.getenv(
@@ -539,7 +539,7 @@ async def clickup_invoice_sync(
                 )
                 actions.extend(invoice_result.get("completed_stages") or ["create_sales_invoice"])
                 if invoice_result.get("status") == "applied":
-                    invoice_result, customer_email_action = _deliver_gt_customer_email_if_enabled(
+                    invoice_result, customer_email_action = _deliver_customer_email_if_enabled(
                         clickup=clickup,
                         bc_client=bc,
                         clickup_summary=summary,
@@ -785,7 +785,7 @@ async def clickup_storage_invoice_sync(
             return result
 
         actions = list(issued.get("completed_stages") or [])
-        if should_send_invoice_customer_email():
+        if should_send_invoice_customer_email(str(issued.get("market") or invoice_settings.supported_market)):
             error_stage = "envio_cliente"
             customer_email_delivery = send_issued_invoice_customer_emails(
                 bc_client=bc,
@@ -987,7 +987,7 @@ async def clickup_demurrage_invoice_sync(
             return result
 
         actions = list(issued.get("completed_stages") or [])
-        if should_send_invoice_customer_email():
+        if should_send_invoice_customer_email(str(issued.get("market") or invoice_settings.supported_market)):
             error_stage = "envio_cliente"
             customer_email_delivery = send_issued_invoice_customer_emails(
                 bc_client=bc,
@@ -1101,7 +1101,7 @@ async def clickup_inspection_invoice_sync(
 
         summary = summarize_task_for_customer_mapping(task)
         invoice_settings = InvoiceAutomationSettings.from_env()
-        issued, customer_email_action = _deliver_gt_customer_email_if_enabled(
+        issued, customer_email_action = _deliver_customer_email_if_enabled(
             clickup=clickup,
             bc_client=bc,
             clickup_summary=summary,
@@ -1242,7 +1242,7 @@ async def clickup_invoice_deliver_posted(
             "created_invoices": [],
             "completed_stages": ["deliver_existing_posted_invoice"],
         }
-        invoice_result, customer_email_action = _deliver_gt_customer_email_if_enabled(
+        invoice_result, customer_email_action = _deliver_customer_email_if_enabled(
             clickup=clickup,
             bc_client=bc,
             clickup_summary=summary,
@@ -1296,7 +1296,7 @@ async def clickup_invoice_deliver_posted(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-def _deliver_gt_customer_email_if_enabled(
+def _deliver_customer_email_if_enabled(
     *,
     clickup: ClickUpClient,
     bc_client: BusinessCentralClient,
@@ -1305,9 +1305,9 @@ def _deliver_gt_customer_email_if_enabled(
     settings: InvoiceAutomationSettings,
 ) -> tuple[dict[str, Any], str]:
     market = str(invoice_result.get("market") or settings.supported_market or "").strip().upper()
-    if market != "GT":
+    if market not in {"GT", "MX"}:
         return invoice_result, "not_applicable"
-    if not should_send_invoice_customer_email():
+    if not should_send_invoice_customer_email(market):
         return invoice_result, "disabled"
 
     try:
@@ -1318,8 +1318,8 @@ def _deliver_gt_customer_email_if_enabled(
         )
     except Exception as exc:
         logger.exception(
-            "Business Central customer email failed after GT invoice creation task_id=%s",
-            clickup_summary.get("task_id"),
+            "Business Central customer email failed after invoice creation market=%s task_id=%s",
+            market, clickup_summary.get("task_id"),
         )
         failed_result = {
             **invoice_result,

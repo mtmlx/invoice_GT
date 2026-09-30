@@ -86,6 +86,56 @@ def test_resolve_market_company_id() -> None:
     assert client._resolve_company_id(company_id="override-id", market="GT") == "override-id"
 
 
+def test_mx_email_preparation_binds_cc_and_invoice_identity_without_send(monkeypatch):
+    client = BusinessCentralClient(make_settings())
+    actions = []
+
+    def post_action(row_id, action_name, **kwargs):
+        actions.append({"row_id": row_id, "action": action_name, **kwargs})
+        return actions[-1]
+
+    monkeypatch.setattr(client, "_post_posted_invoice_fel_action", post_action)
+    client.prepare_invoice_email_delivery(
+        "posted-header-id", cc_recipients="mario@mtmlogix.com",
+        expected_fiscal_uuid="bb14b70f-21d0-423b-8c6d-f2d46bdad658",
+        expected_pdf_sha256="a" * 64,
+        expected_external_document_number="UW-26-ES-002", expected_amount_including_vat=15307.20,
+        expected_due_date="2026-11-03",
+    )
+    assert len(actions) == 1
+    assert actions[0]["action"] == "PrepareInvoiceEmailDelivery"
+    assert actions[0]["market"] == "MX"
+    assert actions[0]["body"] == {
+        "ccRecipients": "mario@mtmlogix.com", "expectedFiscalUuid": "bb14b70f-21d0-423b-8c6d-f2d46bdad658",
+        "expectedPdfSha256": "a" * 64,
+        "expectedExternalDocumentNumber": "UW-26-ES-002", "expectedAmountIncludingVat": 15307.20,
+        "expectedDueDate": "2026-11-03",
+    }
+    with pytest.raises(ValueError, match="only for Mexico"):
+        client.prepare_invoice_email_delivery(
+            "posted-header-id", cc_recipients="", expected_fiscal_uuid="uuid",
+            expected_pdf_sha256="a" * 64,
+            expected_external_document_number="GT-SHIPMENT", expected_amount_including_vat=1,
+            expected_due_date="2026-11-03", market="GT",
+        )
+    assert len(actions) == 1
+
+
+def test_mx_canary_requires_reviewed_pdf_hash_and_uses_separate_action(monkeypatch):
+    client = BusinessCentralClient(make_settings())
+    actions = []
+    monkeypatch.setattr(client, "_post_posted_invoice_fel_action", lambda row_id, action, **kwargs: actions.append((row_id, action, kwargs)))
+    with pytest.raises(ValueError, match="independently reviewed"):
+        client.send_posted_invoice_test_email_to_mario("posted-header-id", market="MX")
+    assert actions == []
+    client.send_posted_invoice_test_email_to_mario("posted-header-id", market="MX", expected_pdf_sha256="a" * 64)
+    assert actions[0][1] == "SendApprovedMxInvoiceTestEmailToMario"
+    assert actions[0][2]["body"] == {"expectedPdfSha256": "a" * 64}
+    client.send_posted_invoice_test_email_to_mario("gt-posted-header-id", market="GT")
+    assert actions[1][1] == "SendApprovedInvoiceTestEmailToMario"
+    assert actions[1][2]["body"] is None
+
+
 def test_raise_for_status_includes_business_central_error_message() -> None:
     response = requests.Response()
     response.status_code = 400

@@ -122,6 +122,11 @@ page 71007 "MTM Posted Inv FEL Desc API"
                     Caption = 'CFDI Cancellation Reason Code';
                     Editable = false;
                 }
+                field(invoiceEmailReadiness; GetInvoiceEmailReadiness())
+                {
+                    Caption = 'Invoice Email Readiness';
+                    Editable = false;
+                }
                 field(cancelGtUuid; Rec.CancelaGTUUID)
                 {
                     Caption = 'Cancel GT UUID';
@@ -158,6 +163,18 @@ page 71007 "MTM Posted Inv FEL Desc API"
         Error('LEGACY FEL CUSTOMER SEND IS DISABLED. USE STAMPFELINVOICE FOR SAT/FEL STAMPING, THEN DELIVER THE BUSINESS CENTRAL SALESINVOICES PDFDOCUMENT ATTACHMENT.');
     end;
     [ServiceEnabled]
+    procedure PrepareInvoiceEmailDelivery(ccRecipients: Text; expectedFiscalUuid: Text; expectedExternalDocumentNumber: Text; expectedAmountIncludingVat: Decimal; expectedDueDate: Date; expectedPdfSha256: Text; var ActionContext: WebServiceActionContext)
+    var
+        InvoiceCustomerEmailMgt: Codeunit "MTM Invoice Customer Email Mgt";
+    begin
+        InvoiceCustomerEmailMgt.PrepareInvoiceEmailDelivery(Rec, ccRecipients, expectedFiscalUuid,
+            expectedExternalDocumentNumber, expectedAmountIncludingVat, expectedDueDate, expectedPdfSha256);
+        ActionContext.SetObjectType(ObjectType::Page);
+        ActionContext.SetObjectId(Page::"MTM Posted Inv FEL Desc API");
+        ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
+        ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
+    end;
+    [ServiceEnabled]
     procedure SendApprovedInvoiceEmail(var ActionContext: WebServiceActionContext)
     var
         InvoiceCustomerEmailMgt: Codeunit "MTM Invoice Customer Email Mgt";
@@ -174,6 +191,17 @@ page 71007 "MTM Posted Inv FEL Desc API"
         InvoiceCustomerEmailMgt: Codeunit "MTM Invoice Customer Email Mgt";
     begin
         InvoiceCustomerEmailMgt.SendApprovedInvoiceTestEmailToMario(Rec);
+        ActionContext.SetObjectType(ObjectType::Page);
+        ActionContext.SetObjectId(Page::"MTM Posted Inv FEL Desc API");
+        ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
+        ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
+    end;
+    [ServiceEnabled]
+    procedure SendApprovedMxInvoiceTestEmailToMario(expectedPdfSha256: Text; var ActionContext: WebServiceActionContext)
+    var
+        InvoiceCustomerEmailMgt: Codeunit "MTM Invoice Customer Email Mgt";
+    begin
+        InvoiceCustomerEmailMgt.SendApprovedMxInvoiceTestEmailToMario(Rec, expectedPdfSha256);
         ActionContext.SetObjectType(ObjectType::Page);
         ActionContext.SetObjectId(Page::"MTM Posted Inv FEL Desc API");
         ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
@@ -390,6 +418,13 @@ page 71007 "MTM Posted Inv FEL Desc API"
         ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
         ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
     end;
+    local procedure GetInvoiceEmailReadiness(): Text
+    var
+        InvoiceCustomerEmailMgt: Codeunit "MTM Invoice Customer Email Mgt";
+    begin
+        exit(InvoiceCustomerEmailMgt.GetInvoiceEmailReadiness(Rec));
+    end;
+
     local procedure GetDynamicFieldText(FieldName: Text): Text var
         RecRef: RecordRef;
         FieldRef: FieldRef;

@@ -910,10 +910,44 @@ class BusinessCentralClient:
         company_id: str | None = None,
         market: str | None = None,
     ) -> dict[str, Any]:
-        """Submit the approved MTM PDF through BC's configured email scenario."""
+        """Submit the company's approved fiscal attachments through BC Email."""
         return self._post_posted_invoice_fel_action(
             posted_invoice_fel_row_id,
             "SendApprovedInvoiceEmail",
+            company_id=company_id,
+            market=market,
+            timeout_seconds=max(self.settings.timeout_seconds, 120),
+        )
+
+    def prepare_invoice_email_delivery(
+        self,
+        posted_invoice_fel_row_id: str,
+        *,
+        cc_recipients: str,
+        expected_fiscal_uuid: str,
+        expected_pdf_sha256: str,
+        expected_external_document_number: str,
+        expected_amount_including_vat: float,
+        expected_due_date: str,
+        company_id: str | None = None,
+        market: str = "MX",
+    ) -> dict[str, Any]:
+        """Persist invoice-specific recipient intent without submitting an email."""
+        if market.strip().upper() != "MX":
+            raise ValueError("Explicit fiscal email preparation is supported only for Mexico.")
+        if len(expected_pdf_sha256) != 64 or any(character not in "0123456789abcdefABCDEF" for character in expected_pdf_sha256):
+            raise ValueError("Mexico email preparation requires the independently reviewed PAC PDF SHA256.")
+        return self._post_posted_invoice_fel_action(
+            posted_invoice_fel_row_id,
+            "PrepareInvoiceEmailDelivery",
+            body={
+                "ccRecipients": cc_recipients,
+                "expectedFiscalUuid": expected_fiscal_uuid,
+                "expectedPdfSha256": expected_pdf_sha256,
+                "expectedExternalDocumentNumber": expected_external_document_number,
+                "expectedAmountIncludingVat": expected_amount_including_vat,
+                "expectedDueDate": expected_due_date,
+            },
             company_id=company_id,
             market=market,
             timeout_seconds=max(self.settings.timeout_seconds, 120),
@@ -925,11 +959,22 @@ class BusinessCentralClient:
         *,
         company_id: str | None = None,
         market: str | None = None,
+        expected_pdf_sha256: str | None = None,
     ) -> dict[str, Any]:
         """Send an existing approved invoice to the fixed internal canary recipient."""
+        effective_market = str(market or self.settings.default_market or "").strip().upper()
+        action_name = "SendApprovedInvoiceTestEmailToMario"
+        body = None
+        if effective_market == "MX":
+            if (not expected_pdf_sha256 or len(expected_pdf_sha256) != 64
+                    or any(character not in "0123456789abcdefABCDEF" for character in expected_pdf_sha256)):
+                raise ValueError("Mexico canaries require the independently reviewed PAC PDF SHA256.")
+            action_name = "SendApprovedMxInvoiceTestEmailToMario"
+            body = {"expectedPdfSha256": expected_pdf_sha256}
         return self._post_posted_invoice_fel_action(
             posted_invoice_fel_row_id,
-            "SendApprovedInvoiceTestEmailToMario",
+            action_name,
+            body=body,
             company_id=company_id,
             market=market,
             timeout_seconds=max(self.settings.timeout_seconds, 120),

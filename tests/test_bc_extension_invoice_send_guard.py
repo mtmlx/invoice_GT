@@ -129,10 +129,14 @@ def test_failed_native_send_captures_outbox_provider_evidence() -> None:
 def test_internal_canary_is_hard_bound_and_does_not_consume_customer_audit() -> None:
     source = EMAIL_MGT.read_text(encoding="utf-8")
     start = source.index("procedure SendApprovedInvoiceTestEmailToMario")
-    end = source.index("local procedure IsStamped", start)
+    end = source.index("\n    procedure ", start + len("procedure SendApprovedInvoiceTestEmailToMario"))
+    wrapper = source[start:end]
+    start = source.index("local procedure SendInternalCanary")
+    end = source.index("\n    procedure ", start + len("local procedure SendInternalCanary"))
     body = source[start:end]
 
     assert "mario@mtmlogix.com" in source
+    assert "SendInternalCanary(PostedInvoice, '')" in wrapper
     assert "TestRecipientLbl" in body
     assert "ResolveRequiredSenderAccount" in body
     assert "TryRenderApprovedInvoicePdf" in body

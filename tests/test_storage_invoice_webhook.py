@@ -59,7 +59,7 @@ def configure_route(monkeypatch) -> None:
     monkeypatch.setattr("webhook_bridge.main.BusinessCentralClient", FakeBC)
     monkeypatch.setattr("webhook_bridge.main.ClickUpSettings.from_env", lambda: object())
     monkeypatch.setattr("webhook_bridge.main.BusinessCentralSettings.from_env", lambda: object())
-    monkeypatch.setattr("webhook_bridge.main.InvoiceAutomationSettings.from_env", lambda: object())
+    monkeypatch.setattr("webhook_bridge.main.InvoiceAutomationSettings.from_env", lambda: SimpleNamespace(supported_market="GT"))
     monkeypatch.setattr("webhook_bridge.main.StorageInvoiceSettings.from_env", lambda: object())
 
 

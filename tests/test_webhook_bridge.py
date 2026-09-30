@@ -1,4 +1,5 @@
 from io import BytesIO
+from dataclasses import replace
 
 from reportlab.pdfgen import canvas
 
@@ -62,6 +63,37 @@ def test_extract_invoice_numbers_accepts_mx_posted_prefix(monkeypatch) -> None:
     result = _extract_invoice_numbers({"invoice_numbers": "B0003342, B0003342"})
 
     assert result == ["B0003342"]
+
+
+def test_mexico_webhook_readiness_does_not_inherit_guatemala_email_activation(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("CLICKUP_INVOICE_SEND_ENABLED", "true")
+    monkeypatch.delenv("CLICKUP_MX_INVOICE_SEND_ENABLED", raising=False)
+    monkeypatch.setattr("webhook_bridge.main.InvoiceAutomationSettings.from_env",
+                        lambda: replace(_invoice_settings(), supported_market="MX"))
+    response = TestClient(app).get("/clickup/webhooks/invoice-sync/readiness")
+    assert response.json()["market"] == "MX"
+    assert response.json()["customer_email_enabled"] is False
+    monkeypatch.setenv("CLICKUP_MX_INVOICE_SEND_ENABLED", "true")
+    assert TestClient(app).get("/clickup/webhooks/invoice-sync/readiness").json()["customer_email_enabled"] is True
+
+
+def test_mexico_webhook_customer_delivery_uses_independent_gate(monkeypatch):
+    from webhook_bridge.main import _deliver_customer_email_if_enabled
+
+    calls = []
+    monkeypatch.setenv("CLICKUP_INVOICE_SEND_ENABLED", "true")
+    monkeypatch.delenv("CLICKUP_MX_INVOICE_SEND_ENABLED", raising=False)
+    monkeypatch.setattr("webhook_bridge.main.send_issued_invoice_customer_emails",
+                        lambda **kwargs: calls.append(kwargs) or {"status": "sent", "sender": "carlos@mtmlogix.com"})
+    args = {"clickup": None, "bc_client": None, "clickup_summary": {"task_id": "SHP-30362"},
+            "invoice_result": {"status": "applied", "market": "MX"}, "settings": _invoice_settings()}
+    assert _deliver_customer_email_if_enabled(**args)[1] == "disabled"
+    assert calls == []
+    monkeypatch.setenv("CLICKUP_MX_INVOICE_SEND_ENABLED", "true")
+    assert _deliver_customer_email_if_enabled(**args)[1] == "sent"
+    assert len(calls) == 1
 
 
 def test_customer_webhook_accepts_clickup_appended_task_id_before_auth(monkeypatch) -> None:
