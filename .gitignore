@@ -43,3 +43,6 @@ docs/track_trace_fixtures/run_*/
 *.app
 .alpackages/
 **/.alpackages/
+
+# Private OAuth credential handoff files documented by the CLI.
+clickup-credentials*.json
