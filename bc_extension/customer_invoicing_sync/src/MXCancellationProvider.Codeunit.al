@@ -4,16 +4,6 @@ codeunit 71041 "MTM MX Cancellation Provider"
     // cancellation POSTs to check status. This adapter deliberately does neither.
     Permissions = tabledata "General Ledger Setup" = r;
 
-    var
-        LastSatRequest: Text;
-
-    procedure GetSatRequestDiagnostic(): Text
-    begin
-        // SAT queries contain only the invoice identity already readable by the
-        // caller. Never populate this diagnostic from a signed PAC request.
-        exit(LastSatRequest);
-    end;
-
     [NonDebuggable]
     procedure PrepareRequest(Operation: Record "MTM MX Cancellation"; var Request: HttpRequestMessage)
     var
@@ -144,7 +134,8 @@ codeunit 71041 "MTM MX Cancellation Provider"
         Expression := '?re=' + Operation."Issuer RFC" + '&rr=' + Operation."Recipient RFC" +
             '&tt=' + Format(Operation.Amount, 0, 9) + '&id=' + FiscalUUID;
         Xml := XmlDocument.Create();
-        Xml.SetDeclaration(XmlDeclaration.Create('1.0', 'utf-8', ''));
+        // An empty standalone argument serializes as invalid standalone="".
+        Xml.SetDeclaration(XmlDeclaration.Create('1.0', 'utf-8', 'no'));
         Envelope := XmlElement.Create('Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
         SoapBody := XmlElement.Create('Body', 'http://schemas.xmlsoap.org/soap/envelope/');
         Query := XmlElement.Create('Consulta', 'http://tempuri.org/');
@@ -158,7 +149,6 @@ codeunit 71041 "MTM MX Cancellation Provider"
         Xml.WriteTo(RequestOutStream);
         RequestBlob.CreateInStream(RequestInStream, TextEncoding::UTF8);
         Content.WriteFrom(RequestInStream);
-        Content.ReadAs(LastSatRequest);
         Content.GetHeaders(Headers);
         Headers.Clear();
         Headers.Add('Content-Type', 'text/xml; charset=utf-8');

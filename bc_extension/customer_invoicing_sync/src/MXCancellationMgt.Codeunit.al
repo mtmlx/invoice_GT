@@ -41,7 +41,7 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         // Build locally to validate configured signing material. Never send it.
         Provider.PrepareRequest(Operation, Request);
         if not Provider.QuerySat(Operation, false) or (Operation."SAT Status" <> 'Vigente') then
-            Error('SAT has not confirmed that the original CFDI is active. Diagnostic: %1. Query: %2', Operation."Result Code", Provider.GetSatRequestDiagnostic());
+            Error('SAT has not confirmed that the original CFDI is active. Diagnostic: %1.', Operation."Result Code");
         // No Insert, Modify or Commit: this preflight never changes BC documents.
     end;
 
