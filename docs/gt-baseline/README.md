@@ -39,13 +39,18 @@ that contract and the recovered GT source during the Mexico adaptation.
 - No invoice was generated, posted, stamped, canceled, sent or modified by this
   verification. No BC app or AWS application was deployed.
 
-**Installed package identity is still unverified.** The service account cannot
-read Extension Management, and matching metadata does not prove equality of
-method bodies or installed version. Before merging this recovery as the
-production baseline or publishing the combined Mexico app, confirm the installed
-version of app `3a0c7b44-6b1e-4a8a-9475-94b0b4157a81` in BC Extension Management
-and compare its downloaded source to this recovery. If production is newer than
-0.1.8.51, recover that source first. Never deploy the older .43 package.
+**Installed package identity is verified.** After the user granted extension
+management access, an authenticated production GET returned installed version
+0.1.8.51 and package ID `5eb13e6f-3b29-4a8c-ba9b-085e31d99a03`. This is the exact
+NAVX package ID in the archived compiled app used for recovery. All 30 repository
+source objects were rechecked against its embedded source. See
+`installed-package-verification.json` for identity, hash and method details.
+
+The developer download endpoint still returns HTTP 500, so no fresh package
+bytes were downloaded. Verification uses the installed package ID and the
+retained compiled package, not API signatures alone. The older .43 package must
+not be published over production. This source recovery requires no BC or AWS
+redeployment and changes no Python runtime files.
 
 The Mexico adaptation must preserve the recovered GT code, pass these tests,
 and complete sandbox cancellation/status/accounting tests before release.
