@@ -1,0 +1,17 @@
+{
+  "verified_at": "2026-09-30T01:24:25.731759+00:00",
+  "environment": "Production",
+  "app_id": "3a0c7b44-6b1e-4a8a-9475-94b0b4157a81",
+  "name": "MTM Customer Invoicing Sync",
+  "publisher": "MTM Logix",
+  "version": "0.1.8.51",
+  "installed": true,
+  "installed_package_id": "5eb13e6f-3b29-4a8c-ba9b-085e31d99a03",
+  "recovered_package_id": "5eb13e6f-3b29-4a8c-ba9b-085e31d99a03",
+  "recovered_package_sha256": "54b4d41835903d0694bbf356e47f3a04b8e8dae44bb217a9248017eddecf8063",
+  "recovered_source_objects_verified": 30,
+  "verification_method": "Authenticated GET of installed extensions; NAVX package identity matched to archived compiled package; repository source tokens matched embedded archive source",
+  "source_download_endpoint_status": 500,
+  "source_download_limitation": "No fresh package bytes were downloaded. Installed package identity matches the locally retained compiled package containing the recovered source.",
+  "production_mutations": false
+}

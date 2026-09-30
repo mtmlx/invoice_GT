@@ -1,5 +1,5 @@
 {
-  "status": "recovered build; live API parity verified; installed version confirmation pending",
+  "status": "installed version and package identity verified; recovered source matched to installed package archive",
   "source_filename": "MTM Logix_MTM Customer Invoicing Sync_0.1.8.51.app",
   "source_archive_sha256": "54b4d41835903d0694bbf356e47f3a04b8e8dae44bb217a9248017eddecf8063",
   "version": "0.1.8.51",
@@ -214,5 +214,6 @@
       "token_sha256": "507ad58069f18c25cd568f084b8234136fc520676c49a193c51a010bf1e9c119",
       "changed_from_github_43": false
     }
-  ]
+  ],
+  "installed_package_id": "5eb13e6f-3b29-4a8c-ba9b-085e31d99a03"
 }
