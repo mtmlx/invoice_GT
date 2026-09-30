@@ -3,12 +3,11 @@
 Status: implementation candidate. No production cancellation, posting, stamping,
 email, ClickUp mutation or extension deployment was performed while building it.
 
-This patch applies to the clean GitHub release `ea92dad`. Do **not** install the
-whole compiled 0.1.8.51 package over Production: the installed extension source and
-version have not been established, and live metadata contains newer Guatemala
-actions absent from that baseline. Merge these targeted changes onto the verified
-installed source, retain its GT and TAGOMAGO warehouse controls, assign the next
-version, compile, and validate in a sandbox before a production upgrade.
+This patch is integrated with the verified Guatemala 0.1.8.51 source merged
+through PR #3. The installed production package ID matches the retained compiled
+archive used for recovery. Preserve that source, assign a new extension version,
+compile, and execute the sandbox tests before a production upgrade. Do not
+publish this candidate using the unchanged 0.1.8.51 manifest version.
 
 ## Contract
 
@@ -98,17 +97,17 @@ establish execution success. A sandbox PAC test must validate credential formats
 legacy stored XML encoding, fresh SAT status queries, concurrent/repeated actions,
 payment arriving between preflight and finalization, and native credit application.
 
-Production version/permission inspection is currently blocked for the configured
-API identity. A signed-in administrator can read Extension Management; no access
-permissions were expanded as part of this change. Do not overwrite newer installed
-functionality or publish unrelated local TAGOMAGO lifecycle work with this patch.
+Production extension inspection now succeeds after the user updated the existing
+application's BC permission assignment. The installed 0.1.8.51 package identity
+matches the recovered archive. No extension was deployed during verification.
+Do not publish unrelated local TAGOMAGO lifecycle work with this patch.
 
 ## Recovered Guatemala baseline
 
-The adaptation now includes the recovered 0.1.8.51 source from draft PR #3.
+The adaptation now includes the recovered 0.1.8.51 source from merged PR #3.
 All seven invoice API entities match a fresh production metadata read. GT
 stamping, full credit memo, email and setup source remains unchanged from the
 recovered package. The existing MX shipment-date adjustment is also preserved.
 The manifest stays at the recovered version for review only; assign a new version
-after confirming the installed package and before any release. The installed
-version/source confirmation and sandbox execution gates still apply.
+before any release. Installed package verification is complete; sandbox
+execution and release-version assignment remain outstanding.
