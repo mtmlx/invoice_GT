@@ -1,6 +1,6 @@
 # Mexico Ocean cancellation adaptation
 
-Status: production canary release 0.1.8.59. The user explicitly authorized direct
+Status: production canary release 0.1.8.60. The user explicitly authorized direct
 production execution on 2026-09-29 instead of the proposed sandbox phase.
 
 The verified Guatemala 0.1.8.51 source is preserved. Before creating a replacement,
@@ -113,6 +113,6 @@ The adaptation now includes the recovered 0.1.8.51 source from merged PR #3.
 All seven invoice API entities match a fresh production metadata read. GT
 stamping, full credit memo, email and setup source remains unchanged from the
 recovered package. The existing MX shipment-date adjustment is also preserved.
-The release manifest is 0.1.8.59. Installed baseline verification is complete.
+The release manifest is 0.1.8.60. Installed baseline verification is complete.
 Production deployment and the canary results are recorded separately; this file
 does not claim an invoice has been reissued.

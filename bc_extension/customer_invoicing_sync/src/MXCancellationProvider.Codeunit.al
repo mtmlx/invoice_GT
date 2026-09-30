@@ -124,6 +124,9 @@ codeunit 71041 "MTM MX Cancellation Provider"
         Code: Text;
         CancellationStatus: Text;
         Stream: OutStream;
+        RequestBlob: Codeunit "Temp Blob";
+        RequestOutStream: OutStream;
+        RequestInStream: InStream;
     begin
         FiscalUUID := Operation."Original UUID";
         if Replacement then
@@ -131,6 +134,7 @@ codeunit 71041 "MTM MX Cancellation Provider"
         Expression := '?re=' + Operation."Issuer RFC" + '&rr=' + Operation."Recipient RFC" +
             '&tt=' + Format(Operation.Amount, 0, 9) + '&id=' + FiscalUUID;
         Xml := XmlDocument.Create();
+        Xml.SetDeclaration(XmlDeclaration.Create('1.0', 'utf-8', ''));
         Envelope := XmlElement.Create('Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
         SoapBody := XmlElement.Create('Body', 'http://schemas.xmlsoap.org/soap/envelope/');
         Query := XmlElement.Create('Consulta', 'http://tempuri.org/');
@@ -138,8 +142,12 @@ codeunit 71041 "MTM MX Cancellation Provider"
         SoapBody.Add(Query);
         Envelope.Add(SoapBody);
         Xml.Add(Envelope);
-        Xml.WriteTo(Body);
-        Content.WriteFrom(Body);
+        // Serializing to Text can declare UTF-16 while HttpContent encodes UTF-8.
+        // Keep the XML declaration and transmitted bytes in the same encoding.
+        RequestBlob.CreateOutStream(RequestOutStream, TextEncoding::UTF8);
+        Xml.WriteTo(RequestOutStream);
+        RequestBlob.CreateInStream(RequestInStream, TextEncoding::UTF8);
+        Content.WriteFrom(RequestInStream);
         Content.GetHeaders(Headers);
         Headers.Clear();
         Headers.Add('Content-Type', 'text/xml; charset=utf-8');
