@@ -11,7 +11,24 @@ codeunit 71008 "MTM MX Posted Inv CFDI Mgt"
         if OldInvoiceNo = '' then
             Error('Old invoice number is required.');
 
+        if ReplacementSalesInv."No." = OldInvoiceNo then
+            Error('An invoice cannot substitute itself.');
+        if GetDynamicFieldText(ReplacementSalesInv, 'Fiscal Invoice Number PAC') <> '' then
+            Error('A stamped replacement cannot have its CFDI relation changed.');
+        ReplacementSalesInv.CalcFields(Cancelled);
+        ReplacementSalesInv.TestField(Cancelled, false);
         OldSalesInv.Get(OldInvoiceNo);
+        OldSalesInv.CalcFields(Cancelled);
+        OldSalesInv.TestField(Cancelled, false);
+        ReplacementSalesInv.TestField("Bill-to Customer No.", OldSalesInv."Bill-to Customer No.");
+        ReplacementSalesInv.TestField("Currency Code", OldSalesInv."Currency Code");
+        ReplacementSalesInv.TestField("External Document No.", OldSalesInv."External Document No.");
+        if GetDynamicFieldText(OldSalesInv, 'Electronic Document Status') <> 'Stamp Received' then
+            Error('The original invoice must still be fiscally active before preparing its replacement.');
+        if (GetDynamicFieldText(OldSalesInv, 'Substitution Document No.') <> '') and
+           (GetDynamicFieldText(OldSalesInv, 'Substitution Document No.') <> ReplacementSalesInv."No.")
+        then
+            Error('The original invoice already refers to a different replacement.');
         OldFiscalInvoiceNumberPAC := UpperCase(GetDynamicFieldText(OldSalesInv, 'Fiscal Invoice Number PAC'));
         if OldFiscalInvoiceNumberPAC = '' then
             Error('Old invoice %1 does not have Fiscal Invoice Number PAC.', OldSalesInv."No.");
@@ -52,62 +69,24 @@ codeunit 71008 "MTM MX Posted Inv CFDI Mgt"
     end;
 
     procedure CancelMxInvoiceWithSubstitution(var OldSalesInv: Record "Sales Invoice Header"; SubstitutionInvoiceNo: Code[20]; CancellationReasonId: Text)
-    var
-        ReplacementSalesInv: Record "Sales Invoice Header";
-        CorrectPostedSalesInvoice: Codeunit "Correct Posted Sales Invoice";
-        CancelaFactura: Codeunit CancelaFactura;
-        OldDateTimeCanceled: Text;
-        OldElectronicDocumentStatus: Text;
-        OldFiscalInvoiceNumberPAC: Text;
-        ReplacementFiscalInvoiceNumberPAC: Text;
     begin
-        if CancellationReasonId = '' then
-            CancellationReasonId := '01';
-        if CancellationReasonId <> '01' then
-            Error('Only cancellation reason 01 is valid for cancellation with substitution.');
-        if SubstitutionInvoiceNo = '' then
-            Error('Substitution invoice number is required.');
-
-        OldFiscalInvoiceNumberPAC := GetDynamicFieldText(OldSalesInv, 'Fiscal Invoice Number PAC');
-        if OldFiscalInvoiceNumberPAC = '' then
-            Error('Invoice %1 does not have Fiscal Invoice Number PAC.', OldSalesInv."No.");
-
-        OldDateTimeCanceled := GetDynamicFieldText(OldSalesInv, 'Date/Time Canceled');
-        if OldDateTimeCanceled <> '' then
-            Error('Invoice %1 already has Date/Time Canceled %2.', OldSalesInv."No.", OldDateTimeCanceled);
-
-        OldElectronicDocumentStatus := GetDynamicFieldText(OldSalesInv, 'Electronic Document Status');
-        if (not OldSalesInv.Cancelled) and (OldElectronicDocumentStatus <> 'Stamp Received') then
-            Error('Invoice %1 must be stamped before cancellation with substitution.', OldSalesInv."No.");
-
-        ReplacementSalesInv.Get(SubstitutionInvoiceNo);
-        ReplacementFiscalInvoiceNumberPAC := GetDynamicFieldText(ReplacementSalesInv, 'Fiscal Invoice Number PAC');
-        if ReplacementFiscalInvoiceNumberPAC = '' then
-            Error('Substitution invoice %1 is not stamped yet.', ReplacementSalesInv."No.");
-        if ReplacementSalesInv."Sell-to Customer No." <> OldSalesInv."Sell-to Customer No." then
-            Error(
-                'Substitution invoice %1 customer %2 does not match old invoice %3 customer %4.',
-                ReplacementSalesInv."No.",
-                ReplacementSalesInv."Sell-to Customer No.",
-                OldSalesInv."No.",
-                OldSalesInv."Sell-to Customer No.");
-
-        SetDynamicFieldText(OldSalesInv, 'Substitution Document No.', ReplacementSalesInv."No.");
-
-        if not OldSalesInv.Cancelled then begin
-            CorrectPostedSalesInvoice.CancelPostedInvoice(OldSalesInv);
-            OldSalesInv.Get(OldSalesInv."No.");
-        end;
-
-        CancelaFactura.CacelaComplemento(OldSalesInv, CancellationReasonId);
+        Error('Combined Mexico cancellation is retired. Use RequestMxCancellation, then RefreshStatus and FinalizeAccounting on mxCancellations.');
     end;
 
     local procedure UpsertCfdiRelationDocument(ReplacementSalesInv: Record "Sales Invoice Header"; OldSalesInv: Record "Sales Invoice Header"; OldFiscalInvoiceNumberPAC: Text)
     var
         RelationDocRef: RecordRef;
+        RelatedDocumentField: FieldRef;
     begin
         RelationDocRef.Open(27006); // Microsoft Mexico localization table: CFDI Relation Document.
         SetFieldFilter(RelationDocRef, 'Document No.', ReplacementSalesInv."No.");
+        if RelationDocRef.Count() > 1 then
+            Error('Replacement already has multiple CFDI relations.');
+        if RelationDocRef.FindFirst() then begin
+            GetFieldByName(RelationDocRef, 'Related Doc. No.', RelatedDocumentField);
+            if Format(RelatedDocumentField.Value()) <> OldSalesInv."No." then
+                Error('Replacement is already linked to a different original invoice.');
+        end;
         SetFieldFilter(RelationDocRef, 'Related Doc. No.', OldSalesInv."No.");
         if RelationDocRef.FindFirst() then begin
             SetFieldValue(RelationDocRef, 'Fiscal Invoice Number PAC', OldFiscalInvoiceNumberPAC);

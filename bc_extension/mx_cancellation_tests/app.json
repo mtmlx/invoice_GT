@@ -1,0 +1,27 @@
+{
+  "platform": "1.0.0.0",
+  "application": "27.5.46862.47988",
+  "runtime": "16.0",
+  "target": "Cloud",
+  "features": [
+    "NoImplicitWith"
+  ],
+  "id": "fc93d740-2d1f-4f03-bf74-4561a0009aac",
+  "name": "MTM MX Cancellation Tests",
+  "publisher": "MTM Logix",
+  "version": "0.1.0.0",
+  "idRanges": [
+    {
+      "from": 71940,
+      "to": 71949
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "3a0c7b44-6b1e-4a8a-9475-94b0b4157a81",
+      "name": "MTM Customer Invoicing Sync",
+      "publisher": "MTM Logix",
+      "version": "0.1.8.43"
+    }
+  ]
+}
