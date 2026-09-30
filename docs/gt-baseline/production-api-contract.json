@@ -1,0 +1,298 @@
+{
+  "invoiceEmailDelivery": {
+    "fields": [
+      "attemptCount",
+      "bcEmailMessageId",
+      "customerNumber",
+      "errorText",
+      "lastAttemptAt",
+      "nativeSendAccepted",
+      "nativeSentVerified",
+      "postedInvoiceId",
+      "postedInvoiceNumber",
+      "recipient",
+      "reportLayoutName",
+      "senderAccountId",
+      "senderEmail",
+      "sentAt",
+      "status"
+    ],
+    "actions": {}
+  },
+  "mxSalesInvoiceDraft": {
+    "fields": [
+      "currencyCode",
+      "customerNumber",
+      "dueDate",
+      "externalDocumentNumber",
+      "id",
+      "number",
+      "paymentMethodCode",
+      "paymentTermsCode",
+      "systemModifiedAt"
+    ],
+    "actions": {
+      "setMxPaymentFields": [
+        [
+          "paymentTermsCode",
+          "Edm.String"
+        ],
+        [
+          "paymentMethodCode",
+          "Edm.String"
+        ]
+      ]
+    }
+  },
+  "postedInvoiceFelDescription": {
+    "fields": [
+      "cancelGtUuid",
+      "cancelled",
+      "cfdiCancellationId",
+      "cfdiCancellationReasonCode",
+      "cfdiRelation",
+      "customerNumber",
+      "dateTimeCanceled",
+      "dateTimeStamped",
+      "electronicDocumentStatus",
+      "errorCode",
+      "errorDescription",
+      "externalDocumentNumber",
+      "fiscalInvoiceNumberPac",
+      "fiscalNumber",
+      "fiscalSeries",
+      "id",
+      "mxStampReadiness",
+      "number",
+      "paymentMethodCode",
+      "paymentTermsCode",
+      "systemModifiedAt"
+    ],
+    "actions": {
+      "cancelFelInvoice": [],
+      "cancelFelInvoiceWithMotive": [
+        [
+          "motiveText",
+          "Edm.String"
+        ]
+      ],
+      "cancelFelInvoiceWithMotiveAndIssueDateTime": [
+        [
+          "motiveText",
+          "Edm.String"
+        ],
+        [
+          "issueDateTimeText",
+          "Edm.String"
+        ]
+      ],
+      "cancelFelInvoiceWithReason": [
+        [
+          "cancellationReasonId",
+          "Edm.String"
+        ]
+      ],
+      "cancelMxInvoiceWithSubstitution": [
+        [
+          "substitutionInvoiceNumber",
+          "Edm.String"
+        ],
+        [
+          "cancellationReasonId",
+          "Edm.String"
+        ]
+      ],
+      "cancelPostedInvoiceAndFelWithMotive": [
+        [
+          "motiveText",
+          "Edm.String"
+        ]
+      ],
+      "cancelPostedInvoiceAndFelWithMotiveAndIssueDateTime": [
+        [
+          "motiveText",
+          "Edm.String"
+        ],
+        [
+          "issueDateTimeText",
+          "Edm.String"
+        ]
+      ],
+      "cancelPostedInvoiceInBcAfterFelCancellation": [
+        [
+          "expectedInvoiceNumber",
+          "Edm.String"
+        ],
+        [
+          "expectedExternalDocumentNumber",
+          "Edm.String"
+        ],
+        [
+          "expectedCustomerNumber",
+          "Edm.String"
+        ],
+        [
+          "expectedCurrencyCode",
+          "Edm.String"
+        ],
+        [
+          "expectedAmountIncludingVat",
+          "Edm.Decimal"
+        ],
+        [
+          "expectedFiscalUuid",
+          "Edm.String"
+        ],
+        [
+          "expectedCancellationUuid",
+          "Edm.String"
+        ]
+      ],
+      "processFelInvoiceResponse": [],
+      "repairGtCanceledInvoiceFiscalIdentity": [
+        [
+          "expectedInvoiceNumber",
+          "Edm.String"
+        ],
+        [
+          "expectedFiscalUuid",
+          "Edm.String"
+        ],
+        [
+          "expectedCancelUuid",
+          "Edm.String"
+        ],
+        [
+          "expectedCurrentSeries",
+          "Edm.String"
+        ],
+        [
+          "expectedFiscalNumber",
+          "Edm.String"
+        ]
+      ],
+      "sendApprovedInvoiceEmail": [],
+      "sendApprovedInvoiceTestEmailToMario": [],
+      "sendFelInvoice": [],
+      "setMxSubstitutionRelation": [
+        [
+          "oldInvoiceNumber",
+          "Edm.String"
+        ]
+      ],
+      "stampFelInvoice": [],
+      "stampMxInvoice": [],
+      "syncFelLineDescriptions": []
+    }
+  },
+  "manualInvoiceEmailQueueEntry": {
+    "fields": [
+      "capturedBy",
+      "customerNumber",
+      "enqueuedAt",
+      "externalDocumentNumber",
+      "lastAttemptAt",
+      "lastErrorText",
+      "nextAttemptAt",
+      "postedInvoiceId",
+      "postedInvoiceNumber",
+      "sendAttemptCount",
+      "sentAt",
+      "stampCheckCount",
+      "stampWaitDeadline",
+      "status"
+    ],
+    "actions": {}
+  },
+  "postedCreditMemoFelDescription": {
+    "fields": [
+      "cancelGtUuid",
+      "corrective",
+      "customerNumber",
+      "dateTimeCanceled",
+      "dateTimeStamped",
+      "electronicDocumentStatus",
+      "errorCode",
+      "errorDescription",
+      "externalDocumentNumber",
+      "fiscalInvoiceNumberPac",
+      "id",
+      "motivo",
+      "motivoCancela",
+      "number",
+      "paymentMethodCode",
+      "paymentTermsCode",
+      "systemModifiedAt"
+    ],
+    "actions": {
+      "applyToInvoice": [
+        [
+          "invoiceNumber",
+          "Edm.String"
+        ],
+        [
+          "expectedAppliedAmount",
+          "Edm.Decimal"
+        ]
+      ],
+      "cancelFelCreditMemoWithMotive": [
+        [
+          "motiveText",
+          "Edm.String"
+        ]
+      ],
+      "cancelFelCreditMemoWithMotiveAndIssueDateTime": [
+        [
+          "motiveText",
+          "Edm.String"
+        ],
+        [
+          "issueDateTimeText",
+          "Edm.String"
+        ]
+      ],
+      "setCreditMemoMotive": [
+        [
+          "motiveText",
+          "Edm.String"
+        ]
+      ],
+      "setCreditMemoRelatedInvoice": [
+        [
+          "invoiceNumber",
+          "Edm.String"
+        ]
+      ],
+      "stampFelCreditMemo": [],
+      "stampFelFullCreditMemoFromRelatedInvoice": []
+    }
+  },
+  "manualInvoiceEmailSetup": {
+    "fields": [
+      "captureEnabled",
+      "customerSendEnabled",
+      "id",
+      "initialDelaySeconds",
+      "lastActivatedAt",
+      "lastActivatedBy",
+      "maximumEntriesPerRun",
+      "pollIntervalMinutes",
+      "stampWaitTimeoutMinutes"
+    ],
+    "actions": {
+      "disableAll": [],
+      "disableCustomerSend": [],
+      "enableCustomerSend": [],
+      "prepareCaptureOnly": [],
+      "processDueEntries": []
+    }
+  },
+  "invoiceEmailCanaryEvidence": {
+    "fields": [
+      "evidence",
+      "id",
+      "number"
+    ],
+    "actions": {}
+  }
+}
