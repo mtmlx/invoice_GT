@@ -35,6 +35,15 @@ page 71012 "MTM Invoice Email Audit API"
                 field(nativeSendAccepted; Rec."Native Send Accepted") { Caption = 'Native Send Accepted'; }
                 field(nativeSentVerified; Rec."Native Sent Verified") { Caption = 'Native Sent Verified'; }
                 field(lastAttemptAt; Rec."Last Attempt At") { Caption = 'Last Attempt At'; }
+                field(deliveryPrepared; Rec."Delivery Prepared") { Caption = 'Delivery Prepared'; }
+                field(ccRecipients; Rec."CC Recipients") { Caption = 'CC Recipients'; }
+                field(fiscalUuid; Rec."Fiscal UUID") { Caption = 'Fiscal UUID'; }
+                field(pdfAttachmentSha256; Rec."PDF Attachment SHA256") { Caption = 'PDF Attachment SHA256'; }
+                field(xmlAttachmentSha256; Rec."XML Attachment SHA256") { Caption = 'XML Attachment SHA256'; }
+                field(expectedExternalDocumentNumber; Rec."Expected External Document No.") { Caption = 'Expected External Document Number'; }
+                field(expectedAmountIncludingVat; Rec."Expected Amount Including VAT") { Caption = 'Expected Amount Including VAT'; }
+                field(expectedDueDate; Rec."Expected Due Date") { Caption = 'Expected Due Date'; }
+                field(preparedAt; Rec."Prepared At") { Caption = 'Prepared At'; }
             }
         }
     }

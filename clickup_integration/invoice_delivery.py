@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import unicodedata
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
+from uuid import UUID
+
+import requests
 
 from business_central_client.client import BusinessCentralClient
 from clickup_integration.client import ClickUpClient
@@ -37,6 +43,8 @@ DEFAULT_MX_REQUIRED_PDF_TEXT = (
     "Sello SAT",
     "Este documento es una representación impresa de un CFDI",
 )
+INVOICE_EMAIL_SENDERS = {"GT": "consuelo@mtmlogix.com", "MX": "carlos@mtmlogix.com"}
+MX_EMAIL_CAPABILITY = "MX_PAC_PDF_CFDI_XML_V1"
 
 
 class ClickUpInvoiceFieldDeliveryError(RuntimeError):
@@ -55,9 +63,13 @@ def should_validate_invoice_pdf_layout() -> bool:
     return raw_value not in {"0", "false", "no", "off"}
 
 
-def should_send_invoice_customer_email() -> bool:
-    """Control guarded native BC customer delivery for Guatemala invoice flows."""
-    raw_value = os.getenv("CLICKUP_INVOICE_SEND_ENABLED", "false").strip().lower()
+def should_send_invoice_customer_email(market: str = "GT") -> bool:
+    """Keep Guatemala's existing gate and require separate Mexico activation."""
+    normalized_market = market.strip().upper()
+    if normalized_market not in INVOICE_EMAIL_SENDERS:
+        return False
+    env_name = "CLICKUP_MX_INVOICE_SEND_ENABLED" if normalized_market == "MX" else "CLICKUP_INVOICE_SEND_ENABLED"
+    raw_value = os.getenv(env_name, "false").strip().lower()
     return raw_value in {"1", "true", "yes", "on"}
 
 
@@ -66,22 +78,21 @@ def send_issued_invoice_customer_emails(
     bc_client: BusinessCentralClient,
     invoice_result: dict[str, Any],
     settings: InvoiceAutomationSettings,
+    cc_recipients_by_invoice: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Validate the BC PDF, then submit each FEL-stamped invoice through BC Email."""
+    """Submit approved fiscal attachments and require native BC delivery evidence."""
+    market = _resolve_delivery_market(invoice_result, settings=settings)
+    if market not in INVOICE_EMAIL_SENDERS:
+        raise ValueError(f"Invoice customer email is not supported for market {market}.")
     blocker = generic_invoice_tagomago_blocker(
         invoice_result=invoice_result,
-        market=str(invoice_result.get("market") or settings.supported_market),
+        market=market,
         customer_field_names=settings.bc_customer_number_field_names,
     )
     if blocker:
         raise ValueError(blocker["message"])
-    if str(invoice_result.get("market") or settings.supported_market).upper() == "MX":
-        raise ValueError(
-            "Mexico invoice email requires the native Mexico delivery route; "
-            "SendApprovedInvoiceEmail renders the Guatemala report."
-        )
     created_invoices = delivery_invoices_from_result(invoice_result)
-    market = _resolve_delivery_market(invoice_result, settings=settings)
+    expected_sender = INVOICE_EMAIL_SENDERS[market]
     finalized_by_number = {
         str((finalized.get("posted_invoice_after_stamp") or {}).get("number") or "").strip(): finalized
         for finalized in invoice_result.get("finalized_invoices") or []
@@ -103,18 +114,36 @@ def send_issued_invoice_customer_emails(
         if not fel_row_id:
             raise ValueError(f"Business Central FEL API row was not found for invoice {invoice_number}.")
 
-        pdf_content = _download_invoice_pdf_with_retry(
-            bc_client=bc_client,
-            invoice_id=invoice_id,
-            market=market,
-        )
-        validate_invoice_pdf_layout(
-            pdf_content,
-            invoice_number=invoice_number,
-            invoice_group=str(invoice.get("invoice_group") or ""),
-            market=market,
-        )
-        bc_client.send_posted_invoice_customer_email(fel_row_id, market=market)
+        prepared_audit = None
+        if market == "MX":
+            # Mexico's email uses its PAC PDF and normalized CFDI XML. The
+            # standard salesInvoices PDF is a different report and cannot prove
+            # that these native fiscal attachments are ready.
+            fel_row, prepared_audit = _validate_prepared_mx_invoice_email(
+                bc_client=bc_client,
+                invoice=invoice,
+                expected_cc=(cc_recipients_by_invoice or {}).get(invoice_number),
+            )
+            fel_row_id = str(fel_row["id"])
+        else:
+            pdf_content = _download_invoice_pdf_with_retry(
+                bc_client=bc_client,
+                invoice_id=invoice_id,
+                market=market,
+            )
+            validate_invoice_pdf_layout(
+                pdf_content,
+                invoice_number=invoice_number,
+                invoice_group=str(invoice.get("invoice_group") or ""),
+                market=market,
+            )
+        send_timed_out = False
+        try:
+            bc_client.send_posted_invoice_customer_email(fel_row_id, market=market)
+        except requests.Timeout:
+            # The server may already have submitted the message. Read the audit
+            # exactly once and hold incomplete evidence; never submit again.
+            send_timed_out = True
         # The standard salesInvoices API id is not the posted Sales Invoice Header
         # SystemId used by the extension audit table. The FEL API row is keyed by
         # that posted SystemId, so use it for the authoritative delivery readback.
@@ -127,10 +156,11 @@ def send_issued_invoice_customer_emails(
             raise ValueError(
                 f"Business Central did not confirm customer email submission for {invoice_number}. "
                 f"Audit status: {audit_status or 'missing'}. "
-                f"Detail: {(audit or {}).get('errorText') or 'none'}."
+                f"Detail: {(audit or {}).get('errorText') or 'none'}. "
+                f"Client timed out: {send_timed_out}; no automatic resend."
             )
         audit_sender = str((audit or {}).get("senderEmail") or "").strip().lower()
-        if audit_sender != "consuelo@mtmlogix.com":
+        if audit_sender != expected_sender:
             raise ValueError(
                 f"Business Central confirmed an unexpected sender for {invoice_number}: "
                 f"{audit_sender or 'missing'}."
@@ -143,14 +173,98 @@ def send_issued_invoice_customer_emails(
             raise ValueError(
                 f"Business Central did not verify the native Sent Email record for {invoice_number}."
             )
+        if market == "MX":
+            _validate_mx_email_audit(audit or {}, fiscal_uuid=str(fel_row["fiscalInvoiceNumberPac"]))
+            if str((audit or {}).get("ccRecipients") or "") != str((prepared_audit or {}).get("ccRecipients") or ""):
+                raise ValueError(f"Business Central changed the prepared CC intent for {invoice_number}.")
         deliveries.append({"invoice_number": invoice_number, "invoice_id": invoice_id, "audit": audit})
 
     return {
         "status": "sent",
-        "sender": "consuelo@mtmlogix.com",
+        "sender": expected_sender,
         "delivery_provider": "business_central_email_scenario",
         "deliveries": deliveries,
     }
+
+
+def validate_mx_invoice_email_readiness(row: dict[str, Any]) -> str:
+    """Require the deployed native Mexico route and validated fiscal attachments."""
+    fields = dict(
+        component.split("=", 1)
+        for component in str(row.get("invoiceEmailReadiness") or "").split("|")
+        if "=" in component
+    )
+    if fields.get("Market") != "MX" or fields.get("Capability") != MX_EMAIL_CAPABILITY:
+        raise ValueError("Mexico invoice email requires the native Mexico delivery route with PAC PDF and CFDI XML.")
+    if fields.get("AttachmentsValidated") != "true" or fields.get("Sender") != INVOICE_EMAIL_SENDERS["MX"]:
+        raise ValueError(f"Mexico fiscal email attachments are not ready: {fields.get('Error') or 'missing native validation'}.")
+    fiscal_uuid = str(row.get("fiscalInvoiceNumberPac") or "").strip()
+    try:
+        parsed_uuid = UUID(fiscal_uuid)
+        if parsed_uuid.int == 0 or parsed_uuid != UUID(fields.get("FiscalUuid") or ""):
+            raise ValueError("Fiscal UUID mismatch")
+    except (ValueError, AttributeError) as exc:
+        raise ValueError("Mexico email requires matching non-empty fiscal UUID evidence.") from exc
+    if bool(row.get("cancelled")) or str(row.get("electronicDocumentStatus") or "").strip().lower() != "stamp received":
+        raise ValueError("Mexico email requires a non-canceled invoice with Stamp Received.")
+    return fiscal_uuid
+
+
+def _validate_mx_email_audit(audit: dict[str, Any], *, fiscal_uuid: str) -> None:
+    if audit.get("deliveryPrepared") is not True or str(audit.get("fiscalUuid") or "").casefold() != fiscal_uuid.casefold():
+        raise ValueError("Business Central did not confirm the prepared Mexico fiscal email identity.")
+    if not str(audit.get("recipient") or "").strip():
+        raise ValueError("Business Central did not confirm the prepared customer recipients.")
+    if "ccRecipients" not in audit:
+        raise ValueError("Business Central did not expose the prepared CC intent.")
+    for field in ("pdfAttachmentSha256", "xmlAttachmentSha256"):
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", str(audit.get(field) or "")):
+            raise ValueError(f"Business Central did not confirm Mexico attachment evidence: {field}.")
+
+
+def _validate_prepared_mx_invoice_email(
+    *, bc_client: BusinessCentralClient, invoice: dict[str, Any], expected_cc: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    number = str(invoice["number"])
+    # Re-read both authoritative identities immediately before delivery; the
+    # issuance result may predate cancellation or a credit-term correction.
+    row = bc_client.get_posted_invoice_fel_description_by_number(number, market="MX") or {}
+    fiscal_uuid = validate_mx_invoice_email_readiness(row)
+    if not str(row.get("id") or "").strip() or row.get("number") != number:
+        raise ValueError(f"Mexico fiscal API identity does not match invoice {number}.")
+    posted = bc_client.get_posted_sales_invoice_by_number(number, market="MX") or {}
+    if posted.get("id") != invoice["id"] or posted.get("number") != number:
+        raise ValueError(f"Mexico posted invoice identity changed for {number}.")
+    if str(posted.get("status") or "").lower() == "canceled":
+        raise ValueError(f"Mexico posted invoice {number} is canceled.")
+    for field in ("externalDocumentNumber", "customerNumber", "currencyCode", "dueDate", "totalAmountIncludingTax"):
+        if field in invoice and str(invoice[field]) != str(posted.get(field)):
+            raise ValueError(f"Mexico invoice {number} changed after issuance: {field}.")
+    external_number = str(posted.get("externalDocumentNumber") or "").strip()
+    due_date = str(posted.get("dueDate") or "")
+    try:
+        parsed_date = date.fromisoformat(due_date)
+        amount = Decimal(str(posted.get("totalAmountIncludingTax")))
+        if not amount.is_finite() or amount <= 0 or parsed_date.year < 2000 or not external_number:
+            raise ValueError("Invalid expected invoice identity")
+    except (ValueError, InvalidOperation) as exc:
+        raise ValueError(f"Mexico invoice {number} requires its exact reference, amount and due date before email preparation.") from exc
+
+    audit = bc_client.get_invoice_email_delivery_by_posted_invoice_id(str(row["id"]), market="MX") or {}
+    if audit.get("deliveryPrepared") is not True:
+        raise ValueError(
+            f"Mexico invoice {number} is not prepared for email delivery. "
+            "An operator must independently review the PAC PDF and explicitly bind its SHA256 "
+            "with the fiscal UUID, invoice identity and approved recipients before sending."
+        )
+    _validate_mx_email_audit(audit, fiscal_uuid=fiscal_uuid)
+    if (str(audit.get("expectedExternalDocumentNumber") or "") != external_number
+            or str(audit.get("expectedDueDate") or "") != due_date
+            or Decimal(str(audit.get("expectedAmountIncludingVat") or 0)) != amount):
+        raise ValueError(f"Prepared Mexico email identity does not match the current invoice {number}.")
+    if expected_cc is not None and str(audit.get("ccRecipients") or "") != expected_cc:
+        raise ValueError(f"Prepared Mexico CC intent differs from the explicit request for {number}.")
+    return row, audit
 
 
 def validate_invoice_pdf_field_on_task(
