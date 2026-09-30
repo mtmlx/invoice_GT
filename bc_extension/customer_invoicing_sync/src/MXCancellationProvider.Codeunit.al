@@ -4,6 +4,16 @@ codeunit 71041 "MTM MX Cancellation Provider"
     // cancellation POSTs to check status. This adapter deliberately does neither.
     Permissions = tabledata "General Ledger Setup" = r;
 
+    var
+        LastSatRequest: Text;
+
+    procedure GetSatRequestDiagnostic(): Text
+    begin
+        // SAT queries contain only the invoice identity already readable by the
+        // caller. Never populate this diagnostic from a signed PAC request.
+        exit(LastSatRequest);
+    end;
+
     [NonDebuggable]
     procedure PrepareRequest(Operation: Record "MTM MX Cancellation"; var Request: HttpRequestMessage)
     var
@@ -148,6 +158,7 @@ codeunit 71041 "MTM MX Cancellation Provider"
         Xml.WriteTo(RequestOutStream);
         RequestBlob.CreateInStream(RequestInStream, TextEncoding::UTF8);
         Content.WriteFrom(RequestInStream);
+        Content.ReadAs(LastSatRequest);
         Content.GetHeaders(Headers);
         Headers.Clear();
         Headers.Add('Content-Type', 'text/xml; charset=utf-8');
