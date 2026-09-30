@@ -3,6 +3,48 @@ codeunit 71040 "MTM MX Cancellation Mgt"
     Permissions = tabledata "MTM MX Cancellation" = rim,
         tabledata "Sales Invoice Header" = rm;
 
+    procedure CheckOriginalReadiness(InvoiceNo: Code[20]; ExpectedUUID: Text; ExpectedReference: Code[35]; ExpectedAmount: Decimal)
+    var
+        Operation: Record "MTM MX Cancellation" temporary;
+        Original: Record "Sales Invoice Header";
+        Company: Record "Company Information";
+        Customer: Record Customer;
+        Provider: Codeunit "MTM MX Cancellation Provider";
+        CorrectInvoice: Codeunit "Correct Posted Sales Invoice";
+        Request: HttpRequestMessage;
+    begin
+        if CompanyName() <> 'MTM_MX_PROD' then
+            Error('This readiness check is scoped to MTM_MX_PROD.');
+        if (ExpectedUUID = '') or (ExpectedReference = '') or (ExpectedAmount <= 0) then
+            Error('Complete original invoice identity is required.');
+        Operation."Invoice No." := InvoiceNo;
+        Operation."Original UUID" := UpperCase(ExpectedUUID);
+        Operation."External Document No." := ExpectedReference;
+        Operation."Customer No." := 'C00067';
+        Operation."Currency Code" := 'USD';
+        Operation.Amount := ExpectedAmount;
+        Company.Get();
+        Customer.Get(Operation."Customer No.");
+        Operation."Issuer RFC" := ReadField(Company, 'RFC Number');
+        Operation."Recipient RFC" := ReadField(Customer, 'RFC No.');
+        Operation.TestField("Issuer RFC");
+        Operation.TestField("Recipient RFC");
+        Original.Get(InvoiceNo);
+        ValidateInvoice(Original, Operation, false);
+        if ReadField(Original, 'Electronic Document Status') <> 'Stamp Received' then
+            Error('The original must be stamped and active.');
+        if ReadField(Original, 'Substitution Document No.') <> '' then
+            Error('The original already identifies a replacement.');
+        ValidateStampedXml(Original, Operation, false);
+        EnsureUnapplied(Original);
+        CorrectInvoice.TestCorrectInvoiceIsAllowed(Original, true);
+        // Build locally to validate configured signing material. Never send it.
+        Provider.PrepareRequest(Operation, Request);
+        if not Provider.QuerySat(Operation, false) or (Operation."SAT Status" <> 'Vigente') then
+            Error('SAT has not confirmed that the original CFDI is active.');
+        // No Insert, Modify or Commit: this preflight never changes BC documents.
+    end;
+
     procedure RequestCancellation(InvoiceNo: Code[20]; ReplacementNo: Code[20]; ExpectedOriginalUUID: Text; ExpectedReplacementUUID: Text; ExpectedReference: Code[35]; ExpectedAmount: Decimal; ExpectedDueDate: Date)
     var
         Operation: Record "MTM MX Cancellation";

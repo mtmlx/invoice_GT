@@ -25,9 +25,9 @@ codeunit 71041 "MTM MX Cancellation Provider"
         if not Setup.Certificado.HasValue() or not Setup."Llave privada".HasValue() then
             Error('The Mexico signing certificate and private key must be configured.');
         Setup.Certificado.CreateInStream(Stream, TextEncoding::Windows);
-        Stream.ReadText(Certificate);
+        Stream.Read(Certificate);
         Setup."Llave privada".CreateInStream(Stream, TextEncoding::Windows);
-        Stream.ReadText(PrivateKey);
+        Stream.Read(PrivateKey);
         if (Certificate = '') or (PrivateKey = '') then
             Error('The configured Mexico signing material is empty.');
         Body.Add('RfcEmisor', Operation."Issuer RFC");

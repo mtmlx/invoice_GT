@@ -1,13 +1,18 @@
 # Mexico Ocean cancellation adaptation
 
-Status: implementation candidate. No production cancellation, posting, stamping,
-email, ClickUp mutation or extension deployment was performed while building it.
+Status: production canary release 0.1.8.58. The user explicitly authorized direct
+production execution on 2026-09-29 instead of the proposed sandbox phase.
 
-This patch is integrated with the verified Guatemala 0.1.8.51 source merged
-through PR #3. The installed production package ID matches the retained compiled
-archive used for recovery. Preserve that source, assign a new extension version,
-compile, and execute the sandbox tests before a production upgrade. Do not
-publish this candidate using the unchanged 0.1.8.51 manifest version.
+The verified Guatemala 0.1.8.51 source is preserved. Before creating a replacement,
+`CheckMxReplacementReadiness` validates the original's exact identity, XML,
+unapplied balance, native cancellation eligibility, signing configuration and SAT
+active status. It performs no BC writes and no fiscal cancellation. Start with
+UW-26-ES-002 and hold the remaining three until its end-to-end result is verified.
+
+Sandbox execution was not performed. Local tests and compilation do not prove
+PAC or accounting execution; actual production readback is required at each step.
+The canary must stop on an identity, total, date, permission or fiscal-state
+mismatch and reconcile ambiguous responses before any next mutation.
 
 ## Contract
 
@@ -58,7 +63,7 @@ there is no automatic cancellation resubmission after authentication repair.
 SAT status contract:
 https://wwwmat.sat.gob.mx/cs/Satellite?blobcol=urldata&blobkey=id&blobtable=MungoBlobs&blobwhere=1461175013197&ssbinary=true
 
-## Operator use after deployment validation
+## Operator use after deployment verification
 
 The replacement must already have been issued, stamped and reviewed. This command
 does not create, stamp or deliver it. Supply the exact new invoice/UUID rather than
@@ -87,13 +92,13 @@ corrective credit application, original zero balance and replacement outstanding
 balance. Re-read ETA and terms when preparing the new invoice. Then repeat for the
 remaining three after the first pair passes verification.
 
-## Validation and remaining release checks
+## Validation and production canary checks
 
 Python tests exercise read-only default, pending/rejected/unknown holds, UUID and
 amount/date mismatches, request timeout, accounting timeout and repeated completion.
 The AL test app exercises the actual provider response and SAT XML parsers; compile
-it separately and run codeunit 71940 in a BC sandbox. Compilation alone does not
-establish execution success. A sandbox PAC test must validate credential formats,
+it separately; sandbox execution was superseded by the user-authorized production
+canary. Compilation alone does not establish execution success. The live run checks credential formats,
 legacy stored XML encoding, fresh SAT status queries, concurrent/repeated actions,
 payment arriving between preflight and finalization, and native credit application.
 
@@ -108,6 +113,6 @@ The adaptation now includes the recovered 0.1.8.51 source from merged PR #3.
 All seven invoice API entities match a fresh production metadata read. GT
 stamping, full credit memo, email and setup source remains unchanged from the
 recovered package. The existing MX shipment-date adjustment is also preserved.
-The manifest stays at the recovered version for review only; assign a new version
-before any release. Installed package verification is complete; sandbox
-execution and release-version assignment remain outstanding.
+The release manifest is 0.1.8.58. Installed baseline verification is complete.
+Production deployment and the canary results are recorded separately; this file
+does not claim an invoice has been reissued.
