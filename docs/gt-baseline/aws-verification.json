@@ -1,0 +1,15 @@
+{
+  "verified_at": "2026-09-30T01:09:26.577278+00:00",
+  "github_base": "ea92daddf6f10fe3b6c56b0b1a27dba70d667ec0",
+  "aws_environment": "mtm-gt-invoice-webhook-prod",
+  "aws_version": "mx-ocean-eta-20260929-ea92dad",
+  "status": "Ready",
+  "health": "Green",
+  "aws_artifact_sha256": "038f53b7e180386b89acf68150e8fbf454dc8d5a30d6d535eaae9612768089cf",
+  "tracked_files_compared": 194,
+  "artifact_mismatches": [],
+  "configuration_sha256": "8c1c452f40f9e3450386586f5d8a89bfc1f3f0d6b2c24c605d8d82b9181ed85e",
+  "live_metadata_sha256": "b16fc2b28fbb652c5562732e4389a0dffbd5f461fb47e818b85fb51f9296e1a6",
+  "bc_installed_version": "not yet independently verified",
+  "production_mutations": false
+}

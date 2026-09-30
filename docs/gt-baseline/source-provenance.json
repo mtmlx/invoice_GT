@@ -1,0 +1,219 @@
+{
+  "status": "installed version and package identity verified; recovered source matched to installed package archive",
+  "source_filename": "MTM Logix_MTM Customer Invoicing Sync_0.1.8.51.app",
+  "source_archive_sha256": "54b4d41835903d0694bbf356e47f3a04b8e8dae44bb217a9248017eddecf8063",
+  "version": "0.1.8.51",
+  "objects": [
+    {
+      "source_object": "src/_MTM Manual Inv Email Install_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailInstall.Codeunit.al",
+      "export_sha256": "7b5f221c8769d114eda0e05076511aece87814165cd7e7343c2bf76a9cd6f9cb",
+      "token_sha256": "ebca49ec2f8003206d8294ec375ac56c1649652bf5fdf2203b415204c4abce95",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Doc Sending Profiles API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/InvoiceLayoutDocumentSendingProfilesApi.Page.al",
+      "export_sha256": "b2b68604517acab3df1458e5d9966e90ccfece7523795a68811be83d144d7c9e",
+      "token_sha256": "d9e8a31144f7336bbecb1c68b96a9b9f79535df864a7abf32cab77325e8b0a32",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Invoice Customer Email Mgt_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmInvoiceCustomerEmailMgt.Codeunit.al",
+      "export_sha256": "fa7fa4bc6e90fd8fd15e3a7460d619ddd8c30cbd09895d2ba4461974642649ef",
+      "token_sha256": "feab26835501e7081165a9d3000ea5d53a6bd0a45967606ef2b9bc52eb5b8d18",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Custom Report Sel API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/InvoiceLayoutCustomReportSelectionsApi.Page.al",
+      "export_sha256": "df7f45f65659f4baa1852b99941cc82aa96be588f9f505cbd1287fc6783719fd",
+      "token_sha256": "e18be7cd3f27d03b8eedc09f4ad19611b2c805c5b9ea86469bda4a5a19eff6bc",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM MX Sales Inv Draft API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MXSalesInvoiceDraftApi.Page.al",
+      "export_sha256": "6107076e5b2b7aba2e2f6c9ee153909355bea9fdb8e503fcea7ac02a2937277d",
+      "token_sha256": "7a7070a6b903e3700dda14774c0b5a90ed276c686efac9e9b5ddbb61fe14fd78",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Setup_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailSetup.Page.al",
+      "export_sha256": "b6868ec19934c764b863b605b3da4d03edf56ca042bfcdfdb20d80eae3a44cb5",
+      "token_sha256": "10663f7dab2a4ea8cb4e6b1d73b017af788ac44af40b1b75c4072d33b314cf27",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Upgrade_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailUpgrade.Codeunit.al",
+      "export_sha256": "dc67732f42736c7e9acdb7b4d4feabee2fa24402d139f8bb42b08a09110113ef",
+      "token_sha256": "dc3a9f2068aca0f262d3f4512b9bec3b09cc4fa34fd128df2a4809558b16cde2",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Invoice Email Scenario_.EnumExt.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmInvoiceEmailScenario.EnumExt.al",
+      "export_sha256": "3cb337c4cfc79c9f298dce2f7fd7c119d5a29f24abc1900a6792b97a14a105e1",
+      "token_sha256": "6482baa9ca4b3369d0001018a48dc45061efa0992eb013e298651c4da8345529",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Enqueue_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailEnqueue.Codeunit.al",
+      "export_sha256": "9d807b270c5805c38b848846cf03e441d5376b0cf4921acaee936aebd0ff8ad3",
+      "token_sha256": "14b8b9315e7a26e2cdfbd3e60eaeb759d5b4ffc579203aad7ce42cb0c7cddf86",
+      "changed_from_github_43": true
+    },
+    {
+      "source_object": "src/_MTM CUST INV API_.PermissionSet.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmCustomerInvoicingApi.PermissionSet.al",
+      "export_sha256": "4339bf726560f9290299de6aef5ef19f3f0961a6a52ae275675529f7de707501",
+      "token_sha256": "89530c38eac51dfaeab8caa3a4f34721ab79d6a24a23df34297cb38e45ad2413",
+      "changed_from_github_43": true
+    },
+    {
+      "source_object": "src/_MTM GT Posted Inv FEL Mgt_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/GTPostedInvoiceFelMgt.Codeunit.al",
+      "export_sha256": "e1ddfba596d2cbf91a6c9fe7b86ab15b663340dee79a95b26acf64658416fdfd",
+      "token_sha256": "93b970bcefa6eee3977ae0a883015c8040cefa2e193da75935226bc26451c905",
+      "changed_from_github_43": true
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Setup API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailSetupApi.Page.al",
+      "export_sha256": "eac04dd4abf3cdcff8727fedc0eaa1ceab344e098b0dfd9e22897bf569868788",
+      "token_sha256": "a720c5eb7021d3cb6ff4c46bf39111e36419eb1f2cb2096ba4b9fb2188e6d2e9",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Report Layout List API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/InvoiceLayoutListApi.Page.al",
+      "export_sha256": "60d0f19dc792057ede03b9e8938c0c0d2b23b9bb6800e109885d1123ae90f634",
+      "token_sha256": "70a9b0e90af316b6d387d5572c39563153bf34a8ee70762b4aa6b3b5a9f5930a",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Posted Cr Memo FEL API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/PostedCreditMemoFelDescriptionApi.Page.al",
+      "export_sha256": "463f1bfa9b0de1089f99dbc71314e99aa7f08d5e9f228bacc7ee8816d8acf5e5",
+      "token_sha256": "5d686d3276909bcfe08171efc6cafc0cce430f28f260b39a260a1f31dd41e5e1",
+      "changed_from_github_43": true
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Queue_.Table.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailQueue.Table.al",
+      "export_sha256": "45f6e1ced50c0568af0bb1eb811b67f9b515ec0661e3242a8e3828479cb656a8",
+      "token_sha256": "94c75b5bea703144e6d3a71212053e4af92877fe6b212b369ee7253a6cc23c4b",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Report Layout Sel API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/InvoiceLayoutSelectionsApi.Page.al",
+      "export_sha256": "a36e055ca75c66257b2d00cf3146687e0b5056387d13a11154d3ffe4a3f1eaea",
+      "token_sha256": "b4598368a25cd480fbfe09b4bfb08e34534702d2a0e963d75c72a536fe42e493",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Customer Layout Setup API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/InvoiceLayoutCustomerSetupApi.Page.al",
+      "export_sha256": "73b0d1d84fd8d53f62c30a4028516a98357acfda1cdabc0bb551c9219ca83040",
+      "token_sha256": "c6ef7bc0008bae2733f2c7d01b736b82b7d056a667a194d0cbbc364e8287c42e",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Setup Mgt_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailSetupMgt.Codeunit.al",
+      "export_sha256": "8730468b5999714610c922574eabe793da0343345f1c0d6d3be93ae953e04019",
+      "token_sha256": "0fdb31955e1489af41361bcc419a965a47d1f65f0c427cc62fae2355f044a345",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Worker_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailWorker.Codeunit.al",
+      "export_sha256": "75e1c7a3c0691da55e7d0671b01dc6bd7c3a7834cffa1464220a86bf17637f26",
+      "token_sha256": "23b0b1c27a286ef4aa31cb54dd6c157f5f2ff55baaff06ad372349d323e8a7bf",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Inv Email Canary Ev API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmInvoiceEmailCanaryEvidenceApi.Page.al",
+      "export_sha256": "e3e3efd698e2b3cf1824a5d401faa4ff873fbefc45d1a3c45373eb1323f403e0",
+      "token_sha256": "720354dc1824b82efb9fcc3c4d4c226b42a109d107d879f0c685e7947e0e29b3",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Invoice Email Audit API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmInvoiceEmailAuditApi.Page.al",
+      "export_sha256": "df626ffe359a2915b3deee3994ab842784294771e769556e55fcd57c46ce4ac5",
+      "token_sha256": "fb64f3ea9c33e0aa07961fa034aadfcc829e83ac591826c4fb374be7db27df86",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Queue API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailQueueApi.Page.al",
+      "export_sha256": "b791e3dc6c544bd073321bc7024b78f604bc0ff46b21e7b208dd6fbb0572c86f",
+      "token_sha256": "ede2c72670249b70337d42b86c3d85907d06d26e0a7bd9e958b96afad4b76ba9",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Posted Inv FEL Desc API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/PostedInvoiceFelDescriptionApi.Page.al",
+      "export_sha256": "e9fcfa15f91f29b33cae84202f2d32fbdbde8d4019b0e10bee1b1ba5c1e2f42f",
+      "token_sha256": "c12fc6fd22ab66bc0cc1abcb07b1bca056699b7701388513bd744a363df54f01",
+      "changed_from_github_43": true
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Setup_.Table.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailSetup.Table.al",
+      "export_sha256": "f2e08b4f9b7d08908d966c33623c7c209b0286a95c136239db9a2ab8bbfbe17c",
+      "token_sha256": "81e81f4dba78ae2ef6ace42c1a2a237c970dfb8056ce8ff86448379ede90e605",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Report Selections API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/InvoiceLayoutReportSelectionsApi.Page.al",
+      "export_sha256": "855350c0761dd8ce817daf9bc32594c34ab0f23a95c18fd68c4529e9a27f99ba",
+      "token_sha256": "03bd5a982aa27cd680b209927c3550a7dadb84427422a5b7b5309752701e5d5a",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM MX Posted Inv CFDI Mgt_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MXPostedInvoiceCfdiMgt.Codeunit.al",
+      "export_sha256": "39703f1badb1ec9e75151d5b4e391b0c44c758c741c8d058b5f854e74fc18e4f",
+      "token_sha256": "1f5cefc1c8e23c783f08562be6461681b9383b247b7c305ff84eeb75bef5e871",
+      "changed_from_github_43": true
+    },
+    {
+      "source_object": "src/_MTM Customer Invoicing API_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/CustomerInvoicingSyncApi.Page.al",
+      "export_sha256": "494df6da5dc92320ad91e324991920c92f30503e3b1874114526b41dfc581d6f",
+      "token_sha256": "b619aee76e4710a8c7c4cd3b085d5b18b747fc7f5b16645a605cd517c41515c5",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Manual Inv Email Queue_.Page.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmManualInvoiceEmailQueue.Page.al",
+      "export_sha256": "5dae0cf8eb20642045ef497fba4632f4ccc72c73076f8126b74f901b0ea6f496",
+      "token_sha256": "2cc7a1d421ffd5d08af60d501fd85a6c9458075a895066fb73514ed10183b2bb",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Customer Invoicing Mgt_.Codeunit.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/CustomerInvoicingSyncMgt.Codeunit.al",
+      "export_sha256": "14eab462e58b85e3372c7c18d15b69f16467da6a95ee9e824c81b69c84dc348b",
+      "token_sha256": "1cd5376318e57457e178bf42872f92700321aff9a34ea9f40748f235fd025fb4",
+      "changed_from_github_43": false
+    },
+    {
+      "source_object": "src/_MTM Invoice Email Audit_.Table.al",
+      "repository_path": "bc_extension/customer_invoicing_sync/src/MtmInvoiceEmailAudit.Table.al",
+      "export_sha256": "8808fb2e4f46ad8b04e1c1480b12aeba238c27952f51a02e2375ebac72486711",
+      "token_sha256": "507ad58069f18c25cd568f084b8234136fc520676c49a193c51a010bf1e9c119",
+      "changed_from_github_43": false
+    }
+  ],
+  "installed_package_id": "5eb13e6f-3b29-4a8c-ba9b-085e31d99a03"
+}

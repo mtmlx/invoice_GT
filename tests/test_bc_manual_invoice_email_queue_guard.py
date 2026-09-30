@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -69,4 +70,5 @@ def test_setup_api_does_not_allow_arbitrary_state_patch() -> None:
 
 
 def test_extension_version_contains_manual_invoice_queue_release() -> None:
-    assert '"version": "0.1.8.43"' in APP_JSON.read_text(encoding="utf-8")
+    manifest = json.loads(APP_JSON.read_text(encoding="utf-8"))
+    assert tuple(map(int, manifest["version"].split("."))) >= (0, 1, 8, 51)
