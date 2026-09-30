@@ -44,6 +44,22 @@ def test_api_base_url() -> None:
     )
 
 
+def test_mx_cancellation_read_uses_configured_mexico_company(monkeypatch) -> None:
+    client = BusinessCentralClient(make_settings())
+    requests_seen = []
+
+    def request(method, url, **kwargs):
+        requests_seen.append((method, url, kwargs))
+        return {"value": []}
+
+    monkeypatch.setattr(client, "_request", request)
+    assert client.get_mx_cancellation("B0003376") is None
+    method, url, kwargs = requests_seen[0]
+    assert method == "GET"
+    assert "/companies(mx-company-id)/mxCancellations" in url
+    assert kwargs["params"]["$filter"] == "invoiceNumber eq 'B0003376'"
+
+
 def test_expand_company_scoped_path() -> None:
     client = BusinessCentralClient(make_settings())
     assert (

@@ -1085,7 +1085,7 @@ class BusinessCentralClient:
         )
 
     def get_mx_cancellation(self, invoice_number: str) -> dict[str, Any] | None:
-        company = self._resolve_company_id(market="MX")
+        company = self._resolve_company_id(company_id=None, market="MX")
         if not company:
             raise ValueError("Mexico company is not configured")
         url = (
