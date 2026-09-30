@@ -164,3 +164,9 @@ python3 -m inspection_reports.cli batch --max-tasks 5
 - Site path, for example `/sites/Magna`.
 - Source photos folder path.
 - Output reports folder path.
+
+### Security requirement for existing-report recovery
+
+Set `INSPECTION_REPORT_OUTPUT_FOLDER_URL` or `INSPECTION_REPORT_OUTPUT_FOLDER_PATH` (with configured site/hostname) to the trusted location used for report uploads and recovery. Recovery validates the expected PDF's resolved drive/item identity before downloading a task-supplied report link. A configured global source folder is accepted as a fallback only for reports actually stored there. Task-specific photo folders are not authority for reading existing PDFs.
+
+If older reports live in per-task folders and no explicit output location is configured, recovery now fails closed instead of copying their bytes. Review and migrate those reports into the configured report location before relying on recovery. New photo-based generation remains available. The change does not establish immutable task/VIN ownership or a general authorization policy for source images.

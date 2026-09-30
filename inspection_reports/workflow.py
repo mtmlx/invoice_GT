@@ -879,7 +879,13 @@ class InspectionReportWorkflow:
 
         local_pdf_path = self.settings.output_dir / file_name
         try:
+            expected = self._trusted_existing_report(summary)
             item = self.sharepoint.get_item_from_share_url(report_url)
+            if (expected is None or not item.id or not item.drive_id
+                    or (item.drive_id, item.id) != (expected.drive_id, expected.id)
+                    or item.is_folder or item.mime_type != "application/pdf"
+                    or item.name.casefold() != file_name.casefold()):
+                raise ValueError("Existing report is not the expected PDF in the configured report location.")
             self.sharepoint.download_item(item, local_pdf_path)
         except Exception as exc:  # noqa: BLE001 - keep PASSED guarded on recovery runs.
             return {
@@ -916,34 +922,40 @@ class InspectionReportWorkflow:
     def _report_file_writeback_ok(self, writeback: dict[str, Any]) -> bool:
         return writeback.get("status") in {"disabled", "existing", "updated"}
 
-    def _find_existing_uploaded_report_url(self, summary: dict[str, Any]) -> str | None:
+    def _trusted_existing_report(self, summary: dict[str, Any]):
         upload_name = f"{_report_file_base(summary)}.pdf"
-        source_folder, _ = self._resolve_source_folder(summary)
-        output_folder = self._resolve_output_folder(source_folder)
+        output_folder = (self.settings.sharepoint_output_folder_url
+                         or self.settings.sharepoint_output_folder_path
+                         or self.settings.sharepoint_source_folder_url
+                         or self.settings.sharepoint_source_folder_path)
+        if not output_folder:
+            raise ValueError("Existing report recovery requires a configured SharePoint report location.")
         if _is_url(output_folder):
             folder = self.sharepoint.get_item_from_share_url(output_folder)
             item = self.sharepoint.find_child_file_by_name_from_folder_item(
                 folder=folder,
                 file_name=upload_name,
             )
-            return self.sharepoint.create_view_link_for_item(item) if item else None
-
-        hostname, site_path = self.settings.require_sharepoint_location()
-        item = self.sharepoint.find_child_file_by_name(
-            hostname=hostname,
-            site_path=site_path,
-            folder_path=output_folder,
-            file_name=upload_name,
-        )
-        return (
-            self.sharepoint.create_view_link(
+        else:
+            hostname, site_path = self.settings.require_sharepoint_location()
+            item = self.sharepoint.find_child_file_by_name(
                 hostname=hostname,
                 site_path=site_path,
-                item_path="/".join(part.strip("/") for part in (output_folder, upload_name) if part),
+                folder_path=output_folder,
+                file_name=upload_name,
             )
-            if item
-            else None
-        )
+        if item and (item.is_folder or item.mime_type != "application/pdf"
+                     or item.name.casefold() != upload_name.casefold()
+                     or not item.drive_id or not item.id):
+            raise ValueError("Configured report item is not a valid PDF.")
+        return item
+
+    def _find_existing_uploaded_report_url(self, summary: dict[str, Any]) -> str | None:
+        if not (self.settings.sharepoint_output_folder_url or self.settings.sharepoint_output_folder_path
+                or self.settings.sharepoint_source_folder_url or self.settings.sharepoint_source_folder_path):
+            return None
+        item = self._trusted_existing_report(summary)
+        return self.sharepoint.create_view_link_for_item(item) if item else None
 
     def _update_task_status_if_needed(
         self,

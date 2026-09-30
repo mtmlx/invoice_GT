@@ -477,6 +477,7 @@ def test_completion_attaches_existing_sharepoint_report_before_setting_passed(tm
         InspectionReportSettings.from_env(),
         clickup_team_id="8451352",
         output_dir=tmp_path,
+        sharepoint_output_folder_url="https://example.com/trusted-reports",
         report_link_field_ids=("report-field",),
         picture_folder_field_ids=("pictures-field",),
         report_attachment_field_ids=("attachment-field",),
@@ -518,7 +519,7 @@ def test_completion_attaches_existing_sharepoint_report_before_setting_passed(tm
     assert clickup.status_updates == [{"task_id": "task-1", "status": "PASSED"}]
 
 
-def test_existing_report_lookup_uses_task_sharepoint_folder_without_global_source(tmp_path: Path) -> None:
+def test_existing_report_lookup_does_not_trust_task_folder_without_global_source(tmp_path: Path) -> None:
     settings = replace(
         InspectionReportSettings.from_env(),
         sharepoint_source_folder_url=None,
@@ -549,8 +550,8 @@ def test_existing_report_lookup_uses_task_sharepoint_folder_without_global_sourc
         }
     )
 
-    assert result == "https://example.com/VIN123.pdf"
-    assert sharepoint.looked_up_folder == "https://example.com/:f:/s/MTM/VIN123"
+    assert result is None
+    assert sharepoint.looked_up_folder is None
 
 
 class _FakeClickUpForAttachments:
@@ -600,7 +601,10 @@ class _FakeClickUpForCompletion(_FakeClickUpForAttachments):
 
 class _FakeSharePointForCompletion:
     def get_item_from_share_url(self, _share_url: str) -> object:
-        return object()
+        return SharePointItem(id="report", drive_id="trusted", name="VIN123.pdf", path="/reports/VIN123.pdf", web_url=None, mime_type="application/pdf")
+
+    def find_child_file_by_name_from_folder_item(self, *, folder, file_name):
+        return self.get_item_from_share_url("expected")
 
     def download_item(self, _item: object, destination: Path) -> Path:
         destination.parent.mkdir(parents=True, exist_ok=True)

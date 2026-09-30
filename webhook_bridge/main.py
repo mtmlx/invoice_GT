@@ -50,7 +50,7 @@ def invoice_sync_readiness() -> dict[str, Any]:
         logger.exception("Invoice bridge readiness check failed.")
         return {
             "status": "not_ready",
-            "message": str(exc),
+            "message": "Invoice configuration is not ready. Consult the server logs.",
         }
     missing_runtime_config = [
         name
@@ -106,15 +106,17 @@ async def whatsapp_inbound(
         )
         from whatsapp_integration.router import route_customer_message
 
-        form_payload = await _safe_form_urlencoded(request)
-
         settings = WhatsAppSettings.from_env(
             require_booking=True,
             require_twilio_auth=False,
         )
+        if settings.twilio_validate_signature and not settings.twilio_auth_token:
+            raise HTTPException(status_code=500, detail="TWILIO_AUTH_TOKEN is not configured.")
+        if settings.twilio_validate_signature and not x_twilio_signature:
+            raise HTTPException(status_code=401, detail="Invalid Twilio signature.")
+        form_payload = await _safe_form_urlencoded(request)
+
         if settings.twilio_validate_signature:
-            if not settings.twilio_auth_token:
-                raise HTTPException(status_code=500, detail="TWILIO_AUTH_TOKEN is not configured.")
             if not validate_twilio_request_signature(
                 url=settings.twilio_validate_url or str(request.url),
                 params=form_payload,
@@ -171,7 +173,7 @@ async def whatsapp_inbound(
         raise
     except Exception as exc:  # pragma: no cover - exercised in runtime logs
         logger.exception("WhatsApp inbound webhook failed.")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal processing error. Consult the server logs before retrying.") from exc
 
 
 @app.post("/clickup/webhooks/customer-sync")
@@ -316,7 +318,7 @@ async def clickup_customer_sync(
         raise
     except Exception as exc:  # pragma: no cover - exercised in runtime logs
         logger.exception("ClickUp customer webhook failed for task_id=%s", task_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal processing error. Consult the server logs before retrying.") from exc
 
 
 @app.post("/clickup/webhooks/invoice-sync")
@@ -427,7 +429,7 @@ async def clickup_invoice_sync(
             if apply_mode:
                 try:
                     validate_invoice_pdf_field_on_task(summary)
-                except Exception as exc:
+                except ValueError as exc:
                     invoice_result = {
                         "status": "missing_invoice_pdf_field",
                         "message": str(exc),
@@ -478,7 +480,7 @@ async def clickup_invoice_sync(
                         invoice_result = {
                             **invoice_result,
                             "status": "failed_post_creation",
-                            "message": str(exc),
+                            "message": "Invoice delivery failed after creation. Review the existing invoice before retrying.",
                         }
                         error_comment = _write_invoice_error_comment(
                             clickup=clickup,
@@ -541,7 +543,7 @@ async def clickup_invoice_sync(
         raise
     except Exception as exc:  # pragma: no cover - exercised in runtime logs
         logger.exception("ClickUp invoice webhook failed for task_id=%s", task_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal processing error. Consult the server logs before retrying.") from exc
 
 
 @app.post("/clickup/webhooks/inspection-invoice-sync")
@@ -630,7 +632,7 @@ async def clickup_inspection_invoice_sync(
         raise
     except Exception as exc:
         logger.exception("Inspection invoice webhook failed task_id=%s", task_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal processing error. Consult the server logs before retrying.") from exc
 
 
 @app.post("/clickup/webhooks/invoice-delivery-recovery")
@@ -753,7 +755,7 @@ async def clickup_invoice_deliver_posted(
         raise
     except Exception as exc:  # pragma: no cover - exercised in runtime recovery
         logger.exception("ClickUp posted invoice delivery recovery failed for task_id=%s", task_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal processing error. Consult the server logs before retrying.") from exc
 
 
 def _write_invoice_error_comment(
@@ -1045,14 +1047,22 @@ async def _safe_form_urlencoded(request: Request) -> dict[str, str]:
     if "application/x-www-form-urlencoded" not in content_type:
         return {}
 
-    body = await request.body()
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 256 * 1024:
+            raise HTTPException(status_code=413, detail="Webhook body exceeds 256 KiB.")
+        body.extend(chunk)
     if not body:
         return {}
 
-    return {
-        key: value
-        for key, value in parse_qsl(body.decode("utf-8"), keep_blank_values=True)
-    }
+    try:
+        decoded = body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Webhook body must be UTF-8.") from exc
+    try:
+        return dict(parse_qsl(decoded, keep_blank_values=True, max_num_fields=256))
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail="Webhook form exceeds 256 fields.") from exc
 
 
 def _extract_webhook_token(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import logging
 from typing import Any
 
 from business_central_client.client import BusinessCentralClient
@@ -371,10 +372,11 @@ def _apply_customer_invoicing_extension(
             market=market,
             customer_id=customer_id,
         )
-    except Exception as exc:
+    except Exception:
+        logging.getLogger(__name__).exception("Customer invoicing extension update failed customer=%s", customer_id)
         return {
             "status": "failed",
-            "message": str(exc),
+            "message": "Customer invoicing extension update failed. Consult the server logs.",
             "path": path,
         }
 

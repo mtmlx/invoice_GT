@@ -145,4 +145,5 @@ def test_apply_clickup_bc_customer_create_tolerates_extension_failure() -> None:
     assert result["status"] == "applied"
     assert result["created_customer"]["number"] == "C00123"
     assert result["invoicing_extension"]["status"] == "failed"
-    assert "unavailable" in result["invoicing_extension"]["message"]
+    assert "extension update failed" in result["invoicing_extension"]["message"]
+    assert "custom invoicing endpoint unavailable" not in str(result)

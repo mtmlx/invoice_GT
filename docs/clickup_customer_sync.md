@@ -47,18 +47,18 @@ python3 -m clickup_integration.cli auth-url
 Open the printed URL, authorize the app, then capture the `code` from the redirect URL and exchange it:
 
 ```bash
-python3 -m clickup_integration.cli exchange-code --code YOUR_CODE
+python3 -m clickup_integration.cli exchange-code --code YOUR_CODE --token-output clickup-credentials.json
 ```
 
-The command prints an `env_update` block you can paste into `.env`.
+The command writes credentials to a new owner-only (0600) file. Copy its values into `.env` using your local editor; credentials and callback codes are not printed. Existing files and symlinks are rejected before exchanging the code.
 
 ### Option 2: let the local callback helper wait for the code
 
 ```bash
-python3 -m clickup_integration.cli oauth-listen
+python3 -m clickup_integration.cli oauth-listen --token-output clickup-credentials.json
 ```
 
-Then open the authorization URL it prints. After ClickUp redirects to your local callback, the command exchanges the code and prints the token.
+Then open the authorization URL it prints. After ClickUp redirects to your local callback, the command exchanges the code and saves credentials in the private file. Choose a new file path for each run. A failed exchange may leave an empty file; remove that file locally before retrying.
 
 ## Inspect ClickUp structure for customer matching
 

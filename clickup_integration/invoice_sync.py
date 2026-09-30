@@ -750,6 +750,7 @@ def prepare_clickup_bc_sales_invoice_preview(
             market=market,
             reference=proposed_invoice["proposed_bc_payload"]["externalDocumentNumber"],
             customer_number=customer_number or None,
+            customer_id=customer_id or None,
         )
         if duplicate_check:
             duplicate_invoices.append(
@@ -854,7 +855,7 @@ def apply_clickup_bc_sales_invoice(
             return {
                 **preview,
                 "status": "failed",
-                "message": str(exc),
+                "message": "Invoice header creation failed. Review the recorded state before retrying.",
                 "created_invoices": created_invoices,
                 "created_lines": created_lines,
             }
@@ -879,7 +880,7 @@ def apply_clickup_bc_sales_invoice(
                     **preview,
                     "status": "failed_partial",
                     "failed_stage": "set_mx_payment_fields",
-                    "message": str(exc),
+                    "message": "Invoice payment-field update failed. Review the existing draft before retrying.",
                     "created_invoice": {
                         "invoice_group": proposed_invoice.get("invoice_group"),
                         **created_invoice,
@@ -924,7 +925,7 @@ def apply_clickup_bc_sales_invoice(
             return {
                 **preview,
                 "status": "failed_partial",
-                "message": str(exc),
+                "message": "Invoice line creation failed. Review the existing draft before retrying.",
                 "created_invoice": created_invoices[0] if created_invoices else None,
                 "created_invoices": created_invoices,
                 "created_lines": created_lines,
@@ -1004,6 +1005,10 @@ def issue_clickup_bc_sales_invoice(
                     bc_client=bc_client,
                     created_invoice=created_invoice,
                     market=market,
+                    expected_customer=next(
+                        item["proposed_bc_payload"] for item in result["proposed_bc_invoices"]
+                        if item.get("invoice_group") == invoice_group
+                    ),
                 )
                 posted_invoices.append(
                     {
@@ -1097,7 +1102,7 @@ def issue_clickup_bc_sales_invoice(
         return {
             **result,
             "status": "failed_post_creation",
-            "message": str(exc),
+            "message": "Invoice finalization failed. Review the recorded posting and certification stages before retrying.",
             "completed_stages": completed_stages,
             "failed_stage": current_stage,
             "posted_invoices": posted_invoices,
@@ -1146,6 +1151,10 @@ def _existing_duplicate_invoices_for_retry(result: dict[str, Any]) -> list[dict[
     market = str(result.get("market") or "").strip().upper() or None
     for duplicate in duplicate_invoices:
         existing_invoice = duplicate.get("existing_invoice") or {}
+        expected = [item["proposed_bc_payload"] for item in proposed_invoices
+                    if item.get("invoice_group") == duplicate.get("invoice_group")]
+        if len(expected) != 1 or not _invoice_customer_matches(existing_invoice, expected[0]):
+            return []
         invoice_number = str(existing_invoice.get("number") or "").strip()
         if not _looks_posted_invoice_number(invoice_number, market=market):
             return []
@@ -1169,12 +1178,15 @@ def _resolve_posted_sales_invoice_after_post(
     bc_client: BusinessCentralClient,
     created_invoice: dict[str, Any],
     market: str,
+    expected_customer: dict[str, Any],
 ) -> dict[str, Any]:
     invoice_id = str(created_invoice.get("id") or "").strip()
     external_document_number = str(created_invoice.get("externalDocumentNumber") or "").strip()
     for _attempt in range(3):
         posted_invoice = bc_client.get_entity("salesInvoices", invoice_id, market=market)
         if posted_invoice and _looks_posted_invoice_number(posted_invoice.get("number"), market=market):
+            if not _invoice_customer_matches(posted_invoice, expected_customer):
+                raise ValueError("Posted invoice customer does not match the intended customer.")
             return posted_invoice
         if external_document_number:
             posted_invoice = bc_client.get_posted_sales_invoice_by_external_document_number(
@@ -1182,6 +1194,8 @@ def _resolve_posted_sales_invoice_after_post(
                 market=market,
             )
             if posted_invoice and _looks_posted_invoice_number(posted_invoice.get("number"), market=market):
+                if not _invoice_customer_matches(posted_invoice, expected_customer):
+                    raise ValueError("Posted invoice customer does not match the intended customer.")
                 return posted_invoice
         time.sleep(2)
     raise ValueError(
@@ -1983,12 +1997,25 @@ def _build_mapped_charge_input(
     }
 
 
+def _invoice_customer_matches(invoice: dict[str, Any], expected: dict[str, Any]) -> bool:
+    matched = False
+    for key in ("customerNumber", "customerId"):
+        wanted = str(expected.get(key) or "").strip()
+        actual = str(invoice.get(key) or "").strip()
+        if wanted and actual:
+            if actual.casefold() != wanted.casefold():
+                return False
+            matched = True
+    return matched
+
+
 def _find_existing_invoice(
     *,
     bc_client: BusinessCentralClient,
     market: str,
     reference: str,
     customer_number: str | None,
+    customer_id: str | None = None,
 ) -> dict[str, Any] | None:
     escaped_reference = reference.replace("'", "''")
     filters = [f"externalDocumentNumber eq '{escaped_reference}'"]
@@ -2013,6 +2040,8 @@ def _find_existing_invoice(
     for row in sorted(rows, key=_existing_invoice_retry_sort_key):
         if _is_canceled_sales_invoice(row):
             continue
+        if not _invoice_customer_matches(row, {"customerNumber": customer_number, "customerId": customer_id}):
+            return {**row, "customer_binding_error": "Existing invoice customer does not match; manual reconciliation required."}
         invoice_number = str(row.get("number") or "").strip()
         fel_row = (
             bc_client.get_posted_invoice_fel_description_by_number(invoice_number, market=market)
@@ -2063,13 +2092,14 @@ def _validate_customer_fel_readiness(
             customer_id=resolved_customer_id,
             market=market,
         )
-    except Exception as exc:
+    except Exception:
+        logger.exception("GT customer invoicing readiness failed customer=%s", resolved_customer_number)
         return {
             "status": "customer_fel_readiness_api_unavailable",
             "message": (
                 f"Business Central customer {resolved_customer_number or resolved_customer_id or 'UNKNOWN'} "
                 "could not be checked against the customer invoicing API before FEL issuance. "
-                f"Publish the customer invoicing API extension with FEL country fields or review BC access. Detail: {exc}"
+                "Publish the customer invoicing API extension with FEL country fields or review BC access. Consult the server logs."
             ),
             "customer_number": resolved_customer_number,
             "customer_id": resolved_customer_id,
@@ -2156,13 +2186,14 @@ def _resolve_market_invoice_settings(
             customer_id=resolved_customer_id,
             market=market,
         )
-    except Exception as exc:
+    except Exception:
+        logger.exception("MX customer invoicing readiness failed customer=%s", resolved_customer_number)
         return {
             "status": "customer_invoicing_api_unavailable",
             "message": (
                 f"Business Central customer {resolved_customer_number or resolved_customer_id or 'UNKNOWN'} "
                 "could not be checked against the customer invoicing API before Mexico CFDI issuance. "
-                f"Detail: {exc}"
+                "Consult the server logs."
             ),
             "market": market,
             "customer_number": resolved_customer_number,

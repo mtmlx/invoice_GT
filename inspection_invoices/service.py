@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import time
 from dataclasses import asdict
 from datetime import date
@@ -229,10 +230,11 @@ def issue_inspection_invoice(
             ],
             "completed_stages": completed_stages,
         }
-    except Exception as exc:  # noqa: BLE001 - return a recoverable operation result to the webhook.
+    except Exception:  # noqa: BLE001 - return a recoverable operation result to the webhook.
+        logging.getLogger(__name__).exception("Inspection invoice processing failed task=%s", task.get("id"))
         return {
             "status": "failed_post_creation",
-            "message": str(exc),
+            "message": "Inspection invoice processing failed. Review recorded stages before retrying.",
             "market": market,
             "preview": preview,
             "completed_stages": completed_stages,

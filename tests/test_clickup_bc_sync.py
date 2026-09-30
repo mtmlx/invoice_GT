@@ -200,4 +200,5 @@ def test_apply_clickup_to_bc_customer_sync_tolerates_extension_failure() -> None
     assert result["status"] == "applied"
     assert result["updated_customer"]["email"] == "new@example.com"
     assert result["invoicing_extension"]["status"] == "failed"
-    assert "unavailable" in result["invoicing_extension"]["message"]
+    assert "extension update failed" in result["invoicing_extension"]["message"]
+    assert "custom invoicing endpoint unavailable" not in str(result)

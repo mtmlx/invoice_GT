@@ -778,11 +778,12 @@ def test_invoice_webhook_apply_does_not_mark_facturada_when_pdf_upload_fails(mon
     payload = response.json()
     assert payload["mode"] == "apply"
     assert payload["result"]["status"] == "failed_post_creation"
-    assert payload["result"]["message"] == "ClickUp upload failed"
+    assert "Invoice delivery failed after creation" in payload["result"]["message"]
+    assert "ClickUp upload failed" not in response.text
     assert payload["result"]["error_comment"]["task_id"] == "task-1"
     assert "ERROR EN PROCESO DE FACTURACION" in payload["result"]["error_comment"]["comment_text"]
     assert "ENTREGA DE PDF" in payload["result"]["error_comment"]["comment_text"]
-    assert "ClickUp upload failed" in payload["result"]["error_comment"]["comment_text"]
+    assert "Invoice delivery failed after creation" in payload["result"]["error_comment"]["comment_text"]
     assert fake_bc_clients[0].created_headers
     assert fake_clickup_clients[0].field_updates == [
         {"task_id": "task-1", "field_id": "invoice-status", "value": "status-ready"},
@@ -833,7 +834,8 @@ def test_invoice_webhook_apply_writes_spanish_comment_when_fel_stamp_fails(monke
     assert payload["mode"] == "apply"
     assert payload["result"]["status"] == "failed_post_creation"
     assert payload["result"]["failed_stage"] == "stamp_fel_invoice"
-    assert "FEL stamp was not received" in payload["result"]["message"]
+    assert "Invoice finalization failed" in payload["result"]["message"]
+    assert "FEL stamp was not received" not in response.text
     assert payload["result"]["error_comment"]["task_id"] == "task-1"
     assert "ERROR EN PROCESO DE FACTURACION" in payload["result"]["error_comment"]["comment_text"]
     assert "TIMBRADO FEL/SAT" in payload["result"]["error_comment"]["comment_text"]

@@ -222,3 +222,17 @@ def test_inspection_invoice_webhook_returns_the_live_style_dry_run(monkeypatch) 
     assert response.json()["status"] == "processed"
     assert response.json()["mode"] == "dry_run"
     assert response.json()["result"]["proposed_bc_payload"]["externalDocumentNumber"] == "MTLXMGN-316-INT"
+
+
+def test_inspection_failure_keeps_progress_without_diagnostic(monkeypatch, caplog):
+    monkeypatch.setenv('INSPECTION_INVOICE_MARKET', 'GT')
+    class FailingBC(_BC):
+        def stamp_posted_invoice_fel(self, *args, **kwargs):
+            raise RuntimeError('private-inspection-marker')
+    bc = FailingBC()
+    result = issue_inspection_invoice(task=_task(), bc_client=bc, today=date(2026, 7, 11))
+    assert result['status'] == 'failed_post_creation'
+    assert 'post_sales_invoice' in result['completed_stages']
+    assert len(bc.headers) == 1
+    assert 'private-inspection-marker' not in json.dumps(result)
+    assert 'private-inspection-marker' in caplog.text
