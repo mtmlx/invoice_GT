@@ -5,6 +5,7 @@ import secrets
 import argparse
 import json
 import os
+from pathlib import Path
 
 import requests
 
@@ -72,12 +73,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exchange a ClickUp OAuth authorization code for an access token",
     )
     exchange_parser.add_argument("--code", required=True)
+    exchange_parser.add_argument("--token-output", required=True, help="New private file for OAuth credentials")
 
     listen_parser = subparsers.add_parser(
         "oauth-listen",
         help="Wait for a local ClickUp OAuth callback and exchange the code",
     )
     listen_parser.add_argument("--state")
+    listen_parser.add_argument("--token-output", required=True, help="New private file for OAuth credentials")
 
     subparsers.add_parser(
         "workspaces",
@@ -236,30 +239,21 @@ def main() -> None:
         print(build_authorization_url(settings, state=args.state))
         return
 
-    if args.command == "exchange-code":
-        token = exchange_code_for_token(settings, code=args.code)
-        _print(
-            {
-                "access_token": token.access_token,
-                "token_type": token.token_type,
-                "env_update": format_env_update(token),
-            }
-        )
-        return
-
-    if args.command == "oauth-listen":
-        state = args.state or secrets.token_urlsafe(32)
-        print("Open this URL in your browser:")
-        print(build_authorization_url(settings, state=state))
-        callback = wait_for_oauth_callback(settings, expected_state=state)
-        token = exchange_code_for_token(settings, code=callback["code"])
-        payload = {
-            "callback": callback,
-            "access_token": token.access_token,
-            "token_type": token.token_type,
-            "env_update": format_env_update(token),
-        }
-        _print(payload)
+    if args.command in {"exchange-code", "oauth-listen"}:
+        # Create exclusively before consuming a one-use code; never follow or overwrite a file.
+        descriptor = os.open(args.token_output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            if args.command == "oauth-listen":
+                state = args.state or secrets.token_urlsafe(32)
+                print("Open this URL in your browser:")
+                print(build_authorization_url(settings, state=state))
+                callback = wait_for_oauth_callback(settings, expected_state=state)
+                code = callback["code"]
+            else:
+                code = args.code
+            token = exchange_code_for_token(settings, code=code)
+            output.write(format_env_update(token) + "\n")
+        _print({"status": "credentials_saved", "token_output": str(Path(args.token_output).absolute())})
         return
 
     client = ClickUpClient(settings)
