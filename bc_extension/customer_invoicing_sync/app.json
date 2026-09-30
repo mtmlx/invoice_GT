@@ -4,7 +4,7 @@
   "publisher": "MTM Logix",
   "brief": "Custom API surface for ClickUp customer invoicing sync.",
   "description": "Exposes the non-standard customer invoicing fields needed by the ClickUp to Business Central bridge.",
-  "version": "0.1.8.63",
+  "version": "0.1.8.64",
   "runtime": "16.0",
   "target": "Cloud",
   "application": "27.5.46862.47988",

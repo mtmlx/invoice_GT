@@ -692,26 +692,15 @@ codeunit 71013 "MTM Invoice Customer Email Mgt"
     local procedure GenerateSha256(var Blob: Codeunit "Temp Blob"): Text[64]
     var
         CryptographyManagement: Codeunit "Cryptography Management";
-        Base64Convert: Codeunit "Base64 Convert";
-        HashBlob: Codeunit "Temp Blob";
         Stream: InStream;
-        HashOutStream: OutStream;
-        HashByte: Byte;
-        Base64Hash: Text;
         HexHash: Text;
-        Digits: Text;
         HashAlgorithmType: Option MD5,SHA1,SHA256,SHA384,SHA512;
     begin
         Blob.CreateInStream(Stream);
-        Base64Hash := CryptographyManagement.GenerateHash(Stream, HashAlgorithmType::SHA256);
-        HashBlob.CreateOutStream(HashOutStream);
-        Base64Convert.FromBase64(Base64Hash, HashOutStream);
-        HashBlob.CreateInStream(Stream);
-        Digits := '0123456789abcdef';
-        while not Stream.EOS() do
-            if Stream.Read(HashByte, 1) = 1 then
-                HexHash += CopyStr(Digits, (HashByte div 16) + 1, 1) + CopyStr(Digits, (HashByte mod 16) + 1, 1);
-        if StrLen(HexHash) <> 64 then
+        // The stream overload returns hexadecimal (ConvertByteHashToString),
+        // despite the Base64 wording in its public method documentation.
+        HexHash := LowerCase(CryptographyManagement.GenerateHash(Stream, HashAlgorithmType::SHA256));
+        if (StrLen(HexHash) <> 64) or (DelChr(HexHash, '=', '0123456789abcdef') <> '') then
             Error('BC returned an invalid SHA-256 digest.');
         exit(CopyStr(HexHash, 1, 64));
     end;
