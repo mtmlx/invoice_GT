@@ -2,51 +2,46 @@
   "id": "3a0c7b44-6b1e-4a8a-9475-94b0b4157a81",
   "name": "MTM Customer Invoicing Sync",
   "publisher": "MTM Logix",
-  "version": "0.1.8.43",
   "brief": "Custom API surface for ClickUp customer invoicing sync.",
   "description": "Exposes the non-standard customer invoicing fields needed by the ClickUp to Business Central bridge.",
-  "privacyStatement": "",
-  "EULA": "",
-  "help": "",
-  "url": "",
-  "logo": "",
+  "version": "0.1.8.51",
+  "runtime": "16.0",
+  "target": "Cloud",
+  "application": "27.5.46862.47988",
+  "platform": "28.0.54016.0",
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": true,
+    "includeSourceInSymbolFile": true,
+    "applyToDevExtension": false
+  },
+  "features": [
+    "NOIMPLICITWITH"
+  ],
   "dependencies": [
     {
       "id": "b3780cd9-f8f8-4a83-a4d5-0c2ad87b28af",
       "name": "Sustainability",
-      "publisher": "Microsoft",
-      "version": "27.5.46862.46929"
+      "version": "27.5.46862.46929",
+      "publisher": "Microsoft"
     },
     {
       "id": "e1d97edc-c239-46b4-8d84-6368bdf67c8b",
       "name": "E-Document Core",
-      "publisher": "Microsoft",
-      "version": "27.5.46862.47754"
+      "version": "27.5.46862.47754",
+      "publisher": "Microsoft"
     },
     {
       "id": "3e27201c-94b4-431e-8a50-70527191b4c3",
       "name": "MTM",
-      "publisher": "Mario Veraldo",
-      "version": "2.1.0.18"
+      "version": "2.1.0.18",
+      "publisher": "Mario Veraldo"
     }
   ],
-  "screenshots": [],
-  "platform": "1.0.0.0",
-  "application": "27.5.46862.47988",
   "idRanges": [
     {
       "from": 71000,
       "to": 71049
     }
-  ],
-  "resourceExposurePolicy": {
-    "allowDebugging": true,
-    "allowDownloadingSource": true,
-    "includeSourceInSymbolFile": true
-  },
-  "runtime": "16.0",
-  "target": "Cloud",
-  "features": [
-    "NoImplicitWith"
   ]
 }

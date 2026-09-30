@@ -4,7 +4,7 @@ Status: implementation candidate. No production cancellation, posting, stamping,
 email, ClickUp mutation or extension deployment was performed while building it.
 
 This patch applies to the clean GitHub release `ea92dad`. Do **not** install the
-whole compiled 0.1.8.43 package over Production: the installed extension source and
+whole compiled 0.1.8.51 package over Production: the installed extension source and
 version have not been established, and live metadata contains newer Guatemala
 actions absent from that baseline. Merge these targeted changes onto the verified
 installed source, retain its GT and TAGOMAGO warehouse controls, assign the next
@@ -102,3 +102,13 @@ Production version/permission inspection is currently blocked for the configured
 API identity. A signed-in administrator can read Extension Management; no access
 permissions were expanded as part of this change. Do not overwrite newer installed
 functionality or publish unrelated local TAGOMAGO lifecycle work with this patch.
+
+## Recovered Guatemala baseline
+
+The adaptation now includes the recovered 0.1.8.51 source from draft PR #3.
+All seven invoice API entities match a fresh production metadata read. GT
+stamping, full credit memo, email and setup source remains unchanged from the
+recovered package. The existing MX shipment-date adjustment is also preserved.
+The manifest stays at the recovered version for review only; assign a new version
+after confirming the installed package and before any release. The installed
+version/source confirmation and sandbox execution gates still apply.

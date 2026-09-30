@@ -1,0 +1,65 @@
+[
+  {
+    "entity": "invoiceEmailDelivery",
+    "source_fields": 15,
+    "source_actions": 0,
+    "missing_source_fields_in_live": [],
+    "live_additional_fields": [],
+    "missing_or_different_actions": {},
+    "live_actions_absent_from_source": []
+  },
+  {
+    "entity": "mxSalesInvoiceDraft",
+    "source_fields": 9,
+    "source_actions": 1,
+    "missing_source_fields_in_live": [],
+    "live_additional_fields": [],
+    "missing_or_different_actions": {},
+    "live_actions_absent_from_source": []
+  },
+  {
+    "entity": "postedInvoiceFelDescription",
+    "source_fields": 21,
+    "source_actions": 17,
+    "missing_source_fields_in_live": [],
+    "live_additional_fields": [],
+    "missing_or_different_actions": {},
+    "live_actions_absent_from_source": []
+  },
+  {
+    "entity": "manualInvoiceEmailQueueEntry",
+    "source_fields": 14,
+    "source_actions": 0,
+    "missing_source_fields_in_live": [],
+    "live_additional_fields": [],
+    "missing_or_different_actions": {},
+    "live_actions_absent_from_source": []
+  },
+  {
+    "entity": "postedCreditMemoFelDescription",
+    "source_fields": 17,
+    "source_actions": 7,
+    "missing_source_fields_in_live": [],
+    "live_additional_fields": [],
+    "missing_or_different_actions": {},
+    "live_actions_absent_from_source": []
+  },
+  {
+    "entity": "manualInvoiceEmailSetup",
+    "source_fields": 9,
+    "source_actions": 5,
+    "missing_source_fields_in_live": [],
+    "live_additional_fields": [],
+    "missing_or_different_actions": {},
+    "live_actions_absent_from_source": []
+  },
+  {
+    "entity": "invoiceEmailCanaryEvidence",
+    "source_fields": 3,
+    "source_actions": 0,
+    "missing_source_fields_in_live": [],
+    "live_additional_fields": [],
+    "missing_or_different_actions": {},
+    "live_actions_absent_from_source": []
+  }
+]

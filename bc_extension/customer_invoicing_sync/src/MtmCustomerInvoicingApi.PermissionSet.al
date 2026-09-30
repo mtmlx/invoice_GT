@@ -26,6 +26,7 @@ permissionset 71000 "MTM CUST INV API"
         codeunit "Fun. Factura GT" = X,
         codeunit "MTM GT Posted Inv FEL Mgt" = X,
         codeunit "MTM Invoice Customer Email Mgt" = X,
+        codeunit "MTM Manual Inv Email Enqueue" = X,
         codeunit "MTM Manual Inv Email Setup Mgt" = X,
         codeunit "MTM Manual Inv Email Worker" = X,
         page "MTM Customer Invoicing API" = X,

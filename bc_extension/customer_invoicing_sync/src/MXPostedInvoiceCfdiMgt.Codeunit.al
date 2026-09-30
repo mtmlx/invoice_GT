@@ -65,6 +65,10 @@ codeunit 71008 "MTM MX Posted Inv CFDI Mgt"
                 SalesInv."No.",
                 ElectronicDocumentStatus);
 
+        if SalesInv."Shipment Date" > SalesInv."Posting Date" then begin
+            SalesInv."Shipment Date" := SalesInv."Posting Date";
+            SalesInv.Modify(true);
+        end;
         FunFactura.Factura(SalesInv);
     end;
 
