@@ -1077,6 +1077,43 @@ class BusinessCentralClient:
             market=market,
         )
 
+    def request_mx_cancellation(self, posted_invoice_fel_row_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Submit once. A successful HTTP response is not fiscal cancellation proof."""
+        return self._post_posted_invoice_fel_action(
+            posted_invoice_fel_row_id, "RequestMxCancellation", body=payload, market="MX",
+            timeout_seconds=180,
+        )
+
+    def get_mx_cancellation(self, invoice_number: str) -> dict[str, Any] | None:
+        company = self._resolve_company_id(company_id=None, market="MX")
+        if not company:
+            raise ValueError("Mexico company is not configured")
+        url = (
+            f"https://api.businesscentral.dynamics.com/v2.0/{self.settings.environment}"
+            f"/api/mtmlogix/invoiceSync/v1.0/companies({company})/mxCancellations"
+        )
+        reference = invoice_number.replace("'", "''")
+        rows = self._request("GET", url, params={"$filter": f"invoiceNumber eq '{reference}'", "$top": 2}).get("value", [])
+        if len(rows) > 1:
+            raise ValueError("Ambiguous Mexico cancellation identity")
+        return rows[0] if rows else None
+
+    def refresh_mx_cancellation(self, operation_id: str) -> dict[str, Any]:
+        return self._mx_cancellation_action(operation_id, "RefreshStatus")
+
+    def finalize_mx_cancellation(self, operation_id: str) -> dict[str, Any]:
+        return self._mx_cancellation_action(operation_id, "FinalizeAccounting")
+
+    def _mx_cancellation_action(self, operation_id: str, action: str) -> dict[str, Any]:
+        from uuid import UUID
+
+        operation_id = str(UUID(operation_id))
+        return self.post_to_company(
+            "/api/mtmlogix/invoiceSync/v1.0/companies({company_id})/"
+            f"mxCancellations({operation_id})/Microsoft.NAV.{action}",
+            {}, market="MX", timeout_seconds=180,
+        )
+
     def _get_posted_invoice_fel_descriptions(
         self,
         *,
