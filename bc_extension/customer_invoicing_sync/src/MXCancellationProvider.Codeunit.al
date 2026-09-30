@@ -149,14 +149,26 @@ codeunit 71041 "MTM MX Cancellation Provider"
         Request.GetHeaders(Headers);
         Headers.Add('SOAPAction', 'http://tempuri.org/IConsultaCFDIService/Consulta');
         Client.Timeout(60000);
-        if not Client.Send(Request, Response) then
+        if not Client.Send(Request, Response) then begin
+            Operation."Result Code" := 'SAT_TRANSPORT_FAILED';
+            if Response.IsBlockedByEnvironment() then
+                Operation."Result Code" := 'SAT_HTTP_CLIENT_DISABLED';
             exit(false);
-        if not Response.IsSuccessStatusCode() then
+        end;
+        if not Response.IsSuccessStatusCode() then begin
+            Operation."Result Code" := CopyStr('SAT_HTTP_' + Format(Response.HttpStatusCode()), 1, 100);
             exit(false);
-        if not Response.Content.ReadAs(Body) then
+        end;
+        if not Response.Content.ReadAs(Body) then begin
+            Operation."Result Code" := 'SAT_UNREADABLE_RESPONSE';
             exit(false);
-        if not ReadSatResponse(Body, Code, Status, CancellationStatus) then
+        end;
+        if not ReadSatResponse(Body, Code, Status, CancellationStatus) then begin
+            Operation."Result Code" := 'SAT_UNRECOGNIZED_RESPONSE';
+            if Code <> '' then
+                Operation."Result Code" := CopyStr(Code, 1, 100);
             exit(false);
+        end;
         if Replacement then
             exit(Status = 'Vigente');
         Operation."SAT Status" := CopyStr(Status, 1, 100);
