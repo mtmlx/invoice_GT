@@ -4,7 +4,7 @@ from scripts.send_gt_invoice_email_canary_once import _evidence_blocker, _select
 from test_invoice_delivery import FakeMXEmailBC, MX_READINESS, MX_FISCAL_UUID
 
 
-def native_evidence(kind="NotFound", *, sender="carlos@mtmlogix.com", **extra):
+def native_evidence(kind="NotFound", *, sender="consuelo@mtmlogix.com", **extra):
     fields = {"Sender": sender, "AccountId": "scenario-account",
               "FiscalUuid": MX_FISCAL_UUID, "PdfAttachmentSha256": "a" * 64,
               "XmlAttachmentSha256": "b" * 64, "AttachmentCount": "2", **extra}
@@ -23,7 +23,7 @@ def test_mexico_canary_requires_explicit_invoice_and_native_attachment_route():
 
 @pytest.mark.parametrize("evidence", [
     "Unavailable", "NotFound", "ConfigurationError|Account missing", "SentWrongAccount|MessageId=x",
-    native_evidence(sender="consuelo@mtmlogix.com"),
+    native_evidence(sender="carlos@mtmlogix.com"),
     native_evidence("Sent", Recipient="customer@example.com", MessageId="native-id"),
     native_evidence("Sent", Recipient="mario@mtmlogix.com"),
 ])
