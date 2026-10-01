@@ -43,7 +43,7 @@ DEFAULT_MX_REQUIRED_PDF_TEXT = (
     "Sello SAT",
     "Este documento es una representación impresa de un CFDI",
 )
-INVOICE_EMAIL_SENDERS = {"GT": "consuelo@mtmlogix.com", "MX": "carlos@mtmlogix.com"}
+INVOICE_EMAIL_SENDERS = {"GT": "consuelo@mtmlogix.com", "MX": "consuelo@mtmlogix.com"}
 MX_EMAIL_CAPABILITY = "MX_PAC_PDF_CFDI_XML_V1"
 
 

@@ -3,7 +3,7 @@
 Mexico reuses Guatemala's SMTP application authentication, `MTM Invoice Customer
 Delivery` scenario, native Email submission and message/account verification.
 Guatemala continues to use Consuelo and the `FacturaGTM` report. Mexico selects
-Carlos and the exact posted invoice's stamped PAC PDF and normalized CFDI XML.
+Consuelo and the exact posted invoice's stamped PAC PDF and normalized CFDI XML.
 Mexico manual posting capture remains excluded.
 
 ## Independent activation
@@ -15,7 +15,7 @@ manual posting capture, or the restricted TAGOMAGO warehouse/distribution path.
 The existing approved TAGOMAGO USD Ocean provenance check remains required.
 
 Do not enable customer delivery until the installed BC extension exposes the
-native Mexico capability, Carlos has mailbox-scoped application authorization,
+native Mexico capability, Consuelo has mailbox-scoped application authorization,
 and one internal canary has verified the intended sender and both attachments.
 
 ## Persisted invoice-specific delivery intent
@@ -45,7 +45,7 @@ external reference, amount, due date and independently reviewed PAC PDF hash.
 Never apply that CC to another invoice
 by changing a shared environment variable or customer master record.
 
-After sending, the bridge requires Carlos as sender, a native BC message ID,
+After sending, the bridge requires Consuelo as sender, a native BC message ID,
 `nativeSentVerified=true`, the unchanged prepared CC, and UUID/PDF/XML evidence.
 A client timeout results in an audit readback; no second send is submitted.
 Incomplete or ambiguous evidence holds the delivery for operator review.
@@ -70,29 +70,38 @@ sending. Missing evidence, a wrong sender/account, queued or ambiguous messages
 and already sent messages cannot cause another send. An explicit failed outbox
 record requires controlled operator retry after its recorded cause is fixed.
 
-Use the existing SMTP authentication-only preflight with Carlos's mailbox before
-the canary. Reuse the application credential securely and add a separate exact
-Carlos mailbox scope; preserve Consuelo's role assignment and sender setup.
+Use the existing SMTP authentication-only preflight with Consuelo's mailbox
+before the canary. The existing exact Consuelo mailbox scope already authorizes
+this sender; no Exchange scope change is required. Preserve the Guatemala
+sender account, scenario assignment and credentials.
 
-## Carlos account setup in BC
+## Consuelo account setup in Mexico BC
 
-In `MTM_MX_PROD`, edit the existing `Carlos - Mexico` SMTP account:
+In `MTM_MX_PROD`, add a separate `Consuelo - Mexico` SMTP account:
 
-- Email address: `carlos@mtmlogix.com`.
+- Email address and user name: `consuelo@mtmlogix.com`.
+- Sender name: `Consuelo Velasquez`.
 - Server: `smtp.office365.com`, secure connection enabled.
 - Authentication: OAuth 2.0, with **Use custom OAuth settings** enabled.
 - Client ID: `ea5a14b8-e008-49e5-8190-bbf37d50aeb5`
   (`MTM BC Invoice SMTP Sender`, the existing Guatemala SMTP app).
 - Tenant ID: `c4f30f62-18b6-4bdd-b9cd-ace99f865e49`.
-- Client secret: enter the existing valid app secret from secure storage directly
-  in BC. Never put the secret in chat, source control, or release evidence.
+- Client secret: enter a validated secret value for the same SMTP application
+  directly in BC. Native SMTP secrets are account-specific and stored in company
+  isolated storage; Mexico cannot inherit Guatemala's stored secret. An
+  additional Mexico credential can be created without changing or deleting the
+  Guatemala credential. Never put the secret in chat, source control, or release
+  evidence.
 
 Assign the `MTM Invoice Customer Delivery` email scenario to this account in the
 Mexico company. The scenario is sufficient; changing the default sender is not
-required. Guatemala's account, scenario assignment and credentials stay intact.
+required. Keep `Carlos - Mexico` unassigned from this invoice scenario. Guatemala's
+account, scenario assignment and credentials stay intact. AL and Python reject
+Carlos or any other Mexico sender until a separately approved sender change.
 
-Exchange authorization is managed separately with
+Carlos's previously configured Exchange authorization is managed separately with
 `scripts/configure_mx_smtp_scope.ps1`. Its default mode is read-only; `-Apply`
 adds an exact Carlos mailbox scope to the existing SMTP app and enables SMTP
 submission only for that mailbox. It verifies Consuelo and tenant SMTP settings
-remain unchanged. It does not configure BC credentials or send email.
+remain unchanged. It is not required for the approved Consuelo Mexico sender
+and does not configure BC credentials or send email.

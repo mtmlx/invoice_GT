@@ -2,7 +2,7 @@ codeunit 71013 "MTM Invoice Customer Email Mgt"
 {
     var
         ExpectedSenderLbl: Label 'consuelo@mtmlogix.com', Locked = true;
-        MexicoSenderLbl: Label 'carlos@mtmlogix.com', Locked = true;
+        MexicoSenderLbl: Label 'consuelo@mtmlogix.com', Locked = true;
         TestRecipientLbl: Label 'mario@mtmlogix.com', Locked = true;
         LayoutNameLbl: Label 'MTMGTInvoiceStandard202606OnePage', Locked = true;
         LogoUrlLbl: Label 'https://mhth6mu5g8.execute-api.us-east-1.amazonaws.com/assets/mtm-logix-email-logo-porcelain-v1.png', Locked = true;
@@ -220,8 +220,11 @@ codeunit 71013 "MTM Invoice Customer Email Mgt"
         then
             Error(GetLastErrorText());
 
-        if not TrySendInvoiceEmail(MessageId, SenderAccount) then
+        if not TrySendInvoiceEmail(MessageId, SenderAccount) then begin
+            if IsMexicoCompany() then
+                Error(GetSendFailureEvidence(PostedInvoice, MessageId, GetLastErrorText()));
             Error(GetLastErrorText());
+        end;
 
         if not HasNativeSentEmailEvidence(
             PostedInvoice,
@@ -405,7 +408,7 @@ codeunit 71013 "MTM Invoice Customer Email Mgt"
     local procedure GetSenderDisplayName(): Text
     begin
         if IsMexicoCompany() then
-            exit('Carlos | MTM Logix');
+            exit('Consuelo Velasquez');
         exit('Consuelo Velasquez');
     end;
 

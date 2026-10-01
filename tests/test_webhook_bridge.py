@@ -86,7 +86,7 @@ def test_mexico_webhook_customer_delivery_uses_independent_gate(monkeypatch):
     monkeypatch.setenv("CLICKUP_INVOICE_SEND_ENABLED", "true")
     monkeypatch.delenv("CLICKUP_MX_INVOICE_SEND_ENABLED", raising=False)
     monkeypatch.setattr("webhook_bridge.main.send_issued_invoice_customer_emails",
-                        lambda **kwargs: calls.append(kwargs) or {"status": "sent", "sender": "carlos@mtmlogix.com"})
+                        lambda **kwargs: calls.append(kwargs) or {"status": "sent", "sender": "consuelo@mtmlogix.com"})
     args = {"clickup": None, "bc_client": None, "clickup_summary": {"task_id": "SHP-30362"},
             "invoice_result": {"status": "applied", "market": "MX"}, "settings": _invoice_settings()}
     assert _deliver_customer_email_if_enabled(**args)[1] == "disabled"

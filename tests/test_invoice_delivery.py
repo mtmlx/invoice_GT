@@ -365,7 +365,7 @@ def test_mexico_email_never_uses_guatemala_report_action():
 
 
 MX_FISCAL_UUID = "bb14b70f-21d0-423b-8c6d-f2d46bdad658"
-MX_READINESS = f"Market=MX|Capability=MX_PAC_PDF_CFDI_XML_V1|AttachmentsValidated=true|FiscalUuid={MX_FISCAL_UUID}|Sender=carlos@mtmlogix.com"
+MX_READINESS = f"Market=MX|Capability=MX_PAC_PDF_CFDI_XML_V1|AttachmentsValidated=true|FiscalUuid={MX_FISCAL_UUID}|Sender=consuelo@mtmlogix.com"
 
 
 def mx_email_result():
@@ -380,7 +380,7 @@ def mx_email_result():
 
 
 class FakeMXEmailBC(FakeEmailBC):
-    def __init__(self, *, readiness=MX_READINESS, prepared_cc=None, sender="carlos@mtmlogix.com", timed_out=False):
+    def __init__(self, *, readiness=MX_READINESS, prepared_cc=None, sender="consuelo@mtmlogix.com", timed_out=False):
         super().__init__(sender=sender)
         self.readiness = readiness
         self.preparations = []
@@ -436,7 +436,7 @@ def test_mexico_customer_email_binds_identity_and_fiscal_attachments():
         bc_client=bc, invoice_result=mx_email_result(), settings=make_settings(),
         cc_recipients_by_invoice={"B0003383": "mario@mtmlogix.com"},
     )
-    assert result["sender"] == "carlos@mtmlogix.com"
+    assert result["sender"] == "consuelo@mtmlogix.com"
     assert bc.sent_row_ids == ["mx-posted-header-id"]
     assert bc.preparations == []
 
