@@ -56,3 +56,18 @@ def test_cross_market_mapping_without_market_default_blocks(monkeypatch, tmp_pat
     monkeypatch.setenv("CLICKUP_INVOICE_CHARGE_MAPPING_PATH", str(root / "config/invoice_charge_mappings/gt.json"))
     with pytest.raises(ValueError, match="belongs to GT"):
         _env_invoice_charge_mapping_path("MX")
+
+
+def test_market_specific_mapping_takes_precedence(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    mx_path = str(root / "config/invoice_charge_mappings/mx.json")
+    monkeypatch.setenv("CLICKUP_INVOICE_CHARGE_MAPPING_PATH", str(root / "config/invoice_charge_mappings/gt.json"))
+    monkeypatch.setenv("CLICKUP_INVOICE_MX_CHARGE_MAPPING_PATH", mx_path)
+    assert _env_invoice_charge_mapping_path("MX") == mx_path
+
+
+def test_wrong_market_specific_mapping_is_rejected(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("CLICKUP_INVOICE_MX_CHARGE_MAPPING_PATH", str(root / "config/invoice_charge_mappings/gt.json"))
+    with pytest.raises(ValueError, match="belongs to GT"):
+        _env_invoice_charge_mapping_path("MX")

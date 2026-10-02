@@ -2873,6 +2873,9 @@ def _env_invoice_charge_mapping_path(market: str) -> str | None:
     market = market.strip().upper()
     scoped = os.getenv(f"CLICKUP_INVOICE_{market}_CHARGE_MAPPING_PATH", "").strip()
     if scoped:
+        declared_market = str(json.loads(Path(scoped).read_text()).get("market") or "").upper()
+        if declared_market and declared_market != market:
+            raise ValueError(f"The {market} charge mapping belongs to {declared_market}.")
         return scoped
 
     explicit = os.getenv("CLICKUP_INVOICE_CHARGE_MAPPING_PATH", "").strip()
