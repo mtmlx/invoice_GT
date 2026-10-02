@@ -2870,9 +2870,22 @@ def load_invoice_charge_mapping_split_by_item_prefix(
 
 
 def _env_invoice_charge_mapping_path(market: str) -> str | None:
+    market = market.strip().upper()
+    scoped = os.getenv(f"CLICKUP_INVOICE_{market}_CHARGE_MAPPING_PATH", "").strip()
+    if scoped:
+        return scoped
+
     explicit = os.getenv("CLICKUP_INVOICE_CHARGE_MAPPING_PATH", "").strip()
     if explicit:
-        return explicit
+        declared_market = str(json.loads(Path(explicit).read_text()).get("market") or "").upper()
+        if not declared_market or declared_market == market:
+            return explicit
+        # A shared service's legacy default may belong to another company.
+        # Never use its items when preparing an invoice for this market.
+        default_path = Path("config") / "invoice_charge_mappings" / f"{market.lower()}.json"
+        if not default_path.exists():
+            raise ValueError(f"No {market} charge mapping is available; the configured mapping belongs to {declared_market}.")
+        return str(default_path)
 
     default_path = Path("config") / "invoice_charge_mappings" / f"{market.lower()}.json"
     if default_path.exists():
