@@ -47,7 +47,7 @@ codeunit 71008 "MTM MX Posted Inv CFDI Mgt"
 
     procedure StampMxInvoice(var SalesInv: Record "Sales Invoice Header")
     var
-        FunFactura: Codeunit "Fun. Factura";
+        SecureStamp: Codeunit "MTM MX Secure Stamp Mgt";
         ElectronicDocumentStatus: Text;
         FiscalInvoiceNumberPAC: Text;
     begin
@@ -69,7 +69,7 @@ codeunit 71008 "MTM MX Posted Inv CFDI Mgt"
             SalesInv."Shipment Date" := SalesInv."Posting Date";
             SalesInv.Modify(true);
         end;
-        FunFactura.Factura(SalesInv);
+        SecureStamp.Stamp(SalesInv);
     end;
 
     procedure CancelMxInvoiceWithSubstitution(var OldSalesInv: Record "Sales Invoice Header"; SubstitutionInvoiceNo: Code[20]; CancellationReasonId: Text)

@@ -622,7 +622,7 @@ codeunit 71013 "MTM Invoice Customer Email Mgt"
                     Line.TestField(Type, Line.Type::Item);
                     if not (Line."No." in ['INT000000026', 'INT000000011', 'INT000000017',
                         'INT000000028', 'INT000000022', 'INT000000031', 'INT000000007', 'INT000000016',
-                        'NAT00000037', 'NAT00000009', 'NAT00000010', 'NAT00000015'])
+                        'NAT00000037', 'NAT00000009', 'NAT00000010', 'NAT00000015', 'NAT00000030'])
                     then
                         Error('Item %1 is outside the approved Mexico USD Ocean delivery path.', Line."No.");
                     if Line."No." = 'INT000000026' then

@@ -22,6 +22,10 @@ class MxReplacement:
     amount_including_vat: Decimal
     replacement_due_date: date
     original_amount_including_vat: Decimal | None = None
+    final_invoice_number: str | None = None
+    final_uuid: str | None = None
+    final_amount_including_vat: Decimal | None = None
+    final_due_date: date | None = None
 
     def payload(self) -> dict[str, Any]:
         original = str(UUID(self.original_uuid)).upper()
@@ -46,6 +50,23 @@ class MxReplacement:
             if not original_amount.is_finite() or original_amount <= 0 or original_amount != original_amount.quantize(Decimal("0.01")):
                 raise ValueError("Expected original total must be a positive, exact cent amount")
             payload["expectedOriginalAmountIncludingVat"] = float(original_amount)
+        final_fields = (self.final_invoice_number, self.final_uuid,
+                        self.final_amount_including_vat, self.final_due_date)
+        if any(value is not None for value in final_fields):
+            if not all(value is not None for value in final_fields) or self.original_amount_including_vat is None:
+                raise ValueError("Chain recovery requires a complete final identity and original amount")
+            final_uuid = str(UUID(self.final_uuid)).upper()
+            if not self.final_invoice_number or self.final_invoice_number in {self.invoice_number, self.replacement_number} or final_uuid in {original, replacement}:
+                raise ValueError("Chain recovery requires three distinct invoice identities")
+            final_amount = Decimal(str(self.final_amount_including_vat))
+            if not final_amount.is_finite() or final_amount <= 0 or final_amount != final_amount.quantize(Decimal("0.01")):
+                raise ValueError("Expected final total must be a positive, exact cent amount")
+            payload.update({
+                "finalInvoiceNumber": self.final_invoice_number,
+                "expectedFinalUuid": final_uuid,
+                "expectedFinalAmountIncludingVat": float(final_amount),
+                "expectedFinalDueDate": self.final_due_date.isoformat(),
+            })
         return payload
 
 
@@ -67,6 +88,17 @@ def _validate_operation(row: dict[str, Any], plan: MxReplacement) -> None:
     actual_original = row.get("originalAmount") or row["amount"]
     if Decimal(str(actual_original)) != Decimal(str(expected_original)):
         raise ValueError("BC cancellation original total differs from the approved amount")
+    if plan.final_invoice_number is None:
+        if row.get("finalInvoiceNumber"):
+            raise ValueError("BC cancellation is bound to an unapproved final chain invoice")
+    else:
+        if (row.get("finalInvoiceNumber") != plan.final_invoice_number or
+                row.get("finalDueDate") != plan.final_due_date.isoformat()):
+            raise ValueError("BC cancellation final chain identity differs from the approved invoice")
+        if str(UUID(row["finalUuid"])) != str(UUID(plan.final_uuid)):
+            raise ValueError("BC cancellation final UUID differs from the approved invoice")
+        if Decimal(str(row["finalAmount"])) != Decimal(str(plan.final_amount_including_vat)):
+            raise ValueError("BC cancellation final total differs from the approved amount")
 
 
 def advance_mx_cancellation(
@@ -101,12 +133,14 @@ def advance_mx_cancellation(
     if not operation:
         return {"status": "request_outcome_uncertain", "operation": None}
     _validate_operation(operation, plan)
-    if operation["state"] != "Completed":
+    if operation["state"] != "Completed" or plan.final_invoice_number is not None:
         bc.refresh_mx_cancellation(operation["id"])
         operation = bc.get_mx_cancellation(plan.invoice_number)
         if not operation:
             raise ValueError("BC cancellation disappeared during verification")
         _validate_operation(operation, plan)
+        if plan.final_invoice_number is not None and operation.get("finalSatStatus") != "Vigente":
+            raise ValueError("The final corrected chain CFDI is not confirmed active by SAT")
     if operation["state"] == "Confirmed" and finalize_accounting:
         try:
             bc.finalize_mx_cancellation(operation["id"])

@@ -6,7 +6,7 @@ from business_central_client.client import BusinessCentralClient
 
 class FakeBusinessCentralClient(BusinessCentralClient):
     def __init__(self) -> None:
-        self.settings = SimpleNamespace()
+        self.settings = SimpleNamespace(timeout_seconds=30)
         self.posts: list[dict[str, Any]] = []
 
     def post_to_company(
@@ -16,12 +16,14 @@ class FakeBusinessCentralClient(BusinessCentralClient):
         *,
         company_id: str | None = None,
         market: str | None = None,
+        timeout_seconds: int | None = None,
     ) -> dict[str, Any]:
         post = {
             "path": path,
             "payload": payload,
             "company_id": company_id,
             "market": market,
+            "timeout_seconds": timeout_seconds,
         }
         self.posts.append(post)
         return post
@@ -53,6 +55,7 @@ def test_stamp_mx_invoice_posts_empty_payload() -> None:
     )
     assert result["payload"] == {}
     assert result["market"] == "MX"
+    assert result["timeout_seconds"] == 180
 
 
 def test_set_mx_payment_fields_posts_terms_and_method() -> None:
@@ -73,6 +76,23 @@ def test_set_mx_payment_fields_posts_terms_and_method() -> None:
         "paymentMethodCode": "99",
     }
     assert result["market"] == "MX"
+
+
+def test_fx_retry_binds_confirmed_attempt_and_approved_invoice():
+    client = FakeBusinessCentralClient()
+    result = client.retry_mx_stamp_after_confirmed_fx_rejection(
+        "posted-row-id", expected_attempt_at="2026-10-02T21:13:20.017Z",
+        expected_amount_including_vat=16034.91, expected_due_date="2026-11-15",
+        expected_external_document_number="UW-26-ES-003",
+    )
+    assert result["path"].endswith("/Microsoft.NAV.RetryMxStampAfterConfirmedFxRejection")
+    assert result["payload"] == {
+        "expectedAttemptAt": "2026-10-02T21:13:20.017Z",
+        "expectedAmountIncludingVat": 16034.91,
+        "expectedDueDate": "2026-11-15",
+        "expectedExternalDocumentNumber": "UW-26-ES-003",
+    }
+    assert result["market"] == "MX" and result["timeout_seconds"] == 180
 
 
 def test_cancel_mx_invoice_with_substitution_posts_reason_and_substitute() -> None:
@@ -178,3 +198,19 @@ def test_corrected_cancellation_uses_additive_action_without_changing_legacy(mon
                                                "expectedOriginalAmountIncludingVat": 15307.2})
     assert [call[1] for call in calls] == ["RequestMxCancellation", "RequestMxCorrectedCancellation"]
     assert all(call[2]["market"] == "MX" and call[2]["timeout_seconds"] == 180 for call in calls)
+
+
+def test_chain_cancellation_uses_its_explicit_additive_action(monkeypatch) -> None:
+    client = FakeBusinessCentralClient()
+    calls = []
+    def post(invoice_id, action, **kwargs):
+        calls.append((invoice_id, action, kwargs))
+        return {}
+    monkeypatch.setattr(client, "_post_posted_invoice_fel_action", post)
+    payload = {"expectedAmountIncludingVat": 15307.2,
+               "expectedOriginalAmountIncludingVat": 15307.2,
+               "finalInvoiceNumber": "B_FINAL_CORRECTED",
+               "expectedFinalAmountIncludingVat": 15347.2}
+    client.request_mx_cancellation("old-row", payload)
+    assert calls == [("old-row", "RequestMxChainCancellation",
+                      {"body": payload, "market": "MX", "timeout_seconds": 180})]

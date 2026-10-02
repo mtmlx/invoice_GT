@@ -52,6 +52,30 @@ codeunit 71040 "MTM MX Cancellation Mgt"
     end;
 
     procedure RequestCorrectedCancellation(InvoiceNo: Code[20]; ReplacementNo: Code[20]; ExpectedOriginalUUID: Text; ExpectedReplacementUUID: Text; ExpectedReference: Code[35]; ExpectedOriginalAmount: Decimal; ExpectedAmount: Decimal; ExpectedDueDate: Date)
+    begin
+        RequestOperation(InvoiceNo, ReplacementNo, ExpectedOriginalUUID, ExpectedReplacementUUID,
+            ExpectedReference, ExpectedOriginalAmount, ExpectedAmount, ExpectedDueDate, '', '', 0, 0D);
+    end;
+
+    procedure RequestChainCancellation(InvoiceNo: Code[20]; ReplacementNo: Code[20]; ExpectedOriginalUUID: Text; ExpectedReplacementUUID: Text; ExpectedReference: Code[35]; ExpectedOriginalAmount: Decimal; ExpectedAmount: Decimal; ExpectedDueDate: Date; FinalInvoiceNo: Code[20]; ExpectedFinalUUID: Text; ExpectedFinalAmount: Decimal; ExpectedFinalDueDate: Date)
+    begin
+        if (FinalInvoiceNo = '') or (ExpectedFinalUUID = '') or
+           (ExpectedFinalAmount <= 0) or (ExpectedFinalDueDate = 0D)
+        then
+            Error('A complete approved final invoice identity is required for chain recovery.');
+        if Round(ExpectedFinalAmount, 0.01) <> ExpectedFinalAmount then
+            Error('The approved final invoice amount must be an exact cent amount.');
+        if (FinalInvoiceNo = InvoiceNo) or (FinalInvoiceNo = ReplacementNo) or
+           (UpperCase(ExpectedFinalUUID) = UpperCase(ExpectedOriginalUUID)) or
+           (UpperCase(ExpectedFinalUUID) = UpperCase(ExpectedReplacementUUID))
+        then
+            Error('Chain recovery requires three distinct invoice identities.');
+        RequestOperation(InvoiceNo, ReplacementNo, ExpectedOriginalUUID, ExpectedReplacementUUID,
+            ExpectedReference, ExpectedOriginalAmount, ExpectedAmount, ExpectedDueDate,
+            FinalInvoiceNo, ExpectedFinalUUID, ExpectedFinalAmount, ExpectedFinalDueDate);
+    end;
+
+    local procedure RequestOperation(InvoiceNo: Code[20]; ReplacementNo: Code[20]; ExpectedOriginalUUID: Text; ExpectedReplacementUUID: Text; ExpectedReference: Code[35]; ExpectedOriginalAmount: Decimal; ExpectedAmount: Decimal; ExpectedDueDate: Date; FinalInvoiceNo: Code[20]; ExpectedFinalUUID: Text; ExpectedFinalAmount: Decimal; ExpectedFinalDueDate: Date)
     var
         Operation: Record "MTM MX Cancellation";
         Original: Record "Sales Invoice Header";
@@ -79,6 +103,11 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         Operation.Amount := ExpectedAmount;
         Operation."Original Amount" := ExpectedOriginalAmount;
         Operation."Replacement Due Date" := ExpectedDueDate;
+        Operation."Final Invoice No." := FinalInvoiceNo;
+        Operation."Final UUID" := UpperCase(ExpectedFinalUUID);
+        Operation."Final Amount" := ExpectedFinalAmount;
+        Operation."Final Due Date" := ExpectedFinalDueDate;
+        Operation."Reason Description" := 'Code correction and mistakes in the amounts';
         Company.Get();
         Customer.Get(Operation."Customer No.");
         Operation."Issuer RFC" := ReadField(Company, 'RFC Number');
@@ -86,6 +115,9 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         Operation.TestField("Issuer RFC");
         Operation.TestField("Recipient RFC");
         ValidatePair(Operation, Original, Replacement);
+        RequirePriorChainCompletion(Operation);
+        if not Provider.QueryFinalSat(Operation) then
+            Error('SAT has not confirmed that the final corrected chain CFDI is active.');
         // A repeat of the identical operation is a status read, never another POST.
         if ExistingOperationMatches(Operation) then
             exit;
@@ -102,6 +134,7 @@ codeunit 71040 "MTM MX Cancellation Mgt"
             exit;
         // Re-read financial and document state after the network preflight.
         ValidatePair(Operation, Original, Replacement);
+        RequirePriorChainCompletion(Operation);
         EnsureUnapplied(Original);
         Operation.State := Operation.State::Unknown;
         Operation."Requested At" := CurrentDateTime();
@@ -123,9 +156,21 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         Replacement: Record "Sales Invoice Header";
     begin
         Operation.Get(Operation."Invoice No.");
-        if Operation.State = Operation.State::Completed then
+        if Operation.State = Operation.State::Completed then begin
+            if Operation."Final Invoice No." <> '' then begin
+                ValidateFinalChainInvoice(Operation);
+                if not Provider.QueryFinalSat(Operation) then
+                    Error('The final corrected chain CFDI is not confirmed active by SAT.');
+                Original.Get(Operation."Invoice No.");
+                VerifyAccountingReversal(Operation, Original);
+                Operation.Modify(true);
+            end;
             exit;
+        end;
         ValidatePair(Operation, Original, Replacement);
+        RequirePriorChainCompletion(Operation);
+        if not Provider.QueryFinalSat(Operation) then
+            Error('The final corrected chain CFDI is not confirmed active by SAT.');
         if not Provider.QuerySat(Operation, false) then begin
             Operation.State := Operation.State::Unknown;
             Operation."Result Code" := 'SAT_QUERY_UNCONFIRMED';
@@ -142,12 +187,27 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         CancelledDocument: Record "Cancelled Document";
     begin
         Operation.Get(Operation."Invoice No.");
+        // Once the first leg completed, the intermediate can subsequently be
+        // cancelled in the second leg. A repeat verifies the final, not a now
+        // legitimately retired intermediate, and never posts another credit.
+        if (Operation.State = Operation.State::Completed) and (Operation."Final Invoice No." <> '') then begin
+            ValidateFinalChainInvoice(Operation);
+            if not Provider.QueryFinalSat(Operation) then
+                Error('The final corrected chain CFDI is not confirmed active by SAT.');
+            Original.Get(Operation."Invoice No.");
+            VerifyAccountingReversal(Operation, Original);
+            Operation.Modify(true);
+            exit;
+        end;
         ValidatePair(Operation, Original, Replacement);
+        RequirePriorChainCompletion(Operation);
         if Operation.State = Operation.State::Completed then begin
             VerifyAccountingReversal(Operation, Original);
             exit;
         end;
         // Fresh authoritative checks; a stale database flag cannot authorize reversal.
+        if not Provider.QueryFinalSat(Operation) then
+            Error('The final corrected chain CFDI is not confirmed active by SAT.');
         if not Provider.QuerySat(Operation, true) then
             Error('Replacement CFDI is not confirmed active by SAT.');
         if not Provider.QuerySat(Operation, false) or (Operation.State <> Operation.State::Confirmed) then
@@ -197,7 +257,13 @@ codeunit 71040 "MTM MX Cancellation Mgt"
            (Existing.InvoiceAmount(false) <> Expected.InvoiceAmount(false)) or
            (Existing."Issuer RFC" <> Expected."Issuer RFC") or
            (Existing."Recipient RFC" <> Expected."Recipient RFC") or
-           (Existing."Replacement Due Date" <> Expected."Replacement Due Date")
+           (Existing."Replacement Due Date" <> Expected."Replacement Due Date") or
+           (Existing."Final Invoice No." <> Expected."Final Invoice No.") or
+           (Existing."Final UUID" <> Expected."Final UUID") or
+           (Existing."Final Amount" <> Expected."Final Amount") or
+           (Existing."Final Due Date" <> Expected."Final Due Date") or
+           ((Existing."Reason Description" <> '') and
+            (Existing."Reason Description" <> Expected."Reason Description"))
         then
             Error('An existing cancellation is bound to a different replacement identity.');
         exit(true);
@@ -213,6 +279,9 @@ codeunit 71040 "MTM MX Cancellation Mgt"
             Error('An invoice cannot substitute itself.');
         Original.Get(Operation."Invoice No.");
         Replacement.Get(Operation."Replacement No.");
+        // This validates the complete next leg before the only legacy customs
+        // exception below can admit a historical intermediate replacement.
+        ValidateFinalChainInvoice(Operation);
         Original.CalcFields(Cancelled);
         Replacement.CalcFields(Cancelled);
         ValidateInvoice(Original, Operation, false);
@@ -227,6 +296,8 @@ codeunit 71040 "MTM MX Cancellation Mgt"
             Error('Replacement must be stamped and active in BC.');
         ValidateStampedXml(Original, Operation, false);
         ValidateStampedXml(Replacement, Operation, true);
+        if Operation."Final Invoice No." <> '' then
+            EnsureUnapplied(Replacement);
     end;
 
     local procedure ValidateInvoice(Invoice: Record "Sales Invoice Header"; Operation: Record "MTM MX Cancellation"; IsReplacement: Boolean)
@@ -257,7 +328,8 @@ codeunit 71040 "MTM MX Cancellation Mgt"
                         'NAT00000037', 'NAT00000009', 'NAT00000010', 'NAT00000015', 'NAT00000030'])
                     then
                         Error('Item %1 is outside the approved USD Ocean path.', Line."No.");
-                    if IsReplacement and (Line."No." = 'INT000000016') then
+                    if IsReplacement and (Line."No." = 'INT000000016') and
+                       (Operation."Final Invoice No." = '') then
                         Error('Destination customs must use NAT00000030 with IVA 16 on the replacement.');
                     if Line."No." = 'INT000000026' then
                         HasOceanFreight := true;
@@ -269,6 +341,89 @@ codeunit 71040 "MTM MX Cancellation Mgt"
             until Line.Next() = 0;
         if not HasOceanFreight then
             Error('The controlled cancellation path requires an Ocean Freight line.');
+    end;
+
+    local procedure ValidateFinalChainInvoice(Operation: Record "MTM MX Cancellation")
+    var
+        FinalInvoice: Record "Sales Invoice Header";
+        FinalOperation: Record "MTM MX Cancellation" temporary;
+        Line: Record "Sales Invoice Line";
+        HasCorrectedCustoms: Boolean;
+        HasLegacyCustoms: Boolean;
+    begin
+        if Operation."Final Invoice No." = '' then
+            exit;
+        if CompanyName() <> 'MTM_MX_PROD' then
+            Error('This controlled Ocean chain recovery is scoped to MTM_MX_PROD.');
+        if (Operation."Final UUID" = '') or (Operation."Final Amount" <= 0) or
+           (Round(Operation."Final Amount", 0.01) <> Operation."Final Amount") or
+           (Operation."Final Due Date" = 0D)
+        then
+            Error('The persisted final chain identity is incomplete.');
+        if (Operation."Final Invoice No." = Operation."Invoice No.") or
+           (Operation."Final Invoice No." = Operation."Replacement No.") or
+           (Operation."Final UUID" = Operation."Original UUID") or
+           (Operation."Final UUID" = Operation."Replacement UUID")
+        then
+            Error('Chain recovery requires three distinct invoice identities.');
+        FinalInvoice.Get(Operation."Final Invoice No.");
+        FinalInvoice.CalcFields(Cancelled);
+        FinalInvoice.TestField(Cancelled, false);
+        FinalInvoice.TestField("Due Date", Operation."Final Due Date");
+        if ReadField(FinalInvoice, 'Electronic Document Status') <> 'Stamp Received' then
+            Error('The final corrected chain invoice must be stamped and active in BC.');
+        FinalOperation := Operation;
+        FinalOperation."Invoice No." := Operation."Replacement No.";
+        FinalOperation."Original UUID" := Operation."Replacement UUID";
+        FinalOperation."Replacement No." := Operation."Final Invoice No.";
+        FinalOperation."Replacement UUID" := Operation."Final UUID";
+        FinalOperation.Amount := Operation."Final Amount";
+        FinalOperation."Replacement Due Date" := Operation."Final Due Date";
+        // The final always uses the normal corrected-tax guard. Only the
+        // historical intermediate in the approved first leg gets an exception.
+        FinalOperation."Final Invoice No." := '';
+        ValidateInvoice(FinalInvoice, FinalOperation, true);
+        ValidateStampedXml(FinalInvoice, FinalOperation, true);
+        Line.SetRange("Document No.", Operation."Replacement No.");
+        Line.SetRange(Type, Line.Type::Item);
+        Line.SetRange("No.", 'INT000000016');
+        if Line.FindSet() then
+            repeat
+                Line.TestField("VAT %", 0);
+                HasLegacyCustoms := HasLegacyCustoms or (Line.Amount > 0);
+            until Line.Next() = 0;
+        if not HasLegacyCustoms then
+            Error('Chain recovery requires a historical intermediate customs charge.');
+        Line.SetRange("Document No.", FinalInvoice."No.");
+        Line.SetRange("No.", 'NAT00000030');
+        if Line.FindSet() then
+            repeat
+                Line.TestField("VAT %", 16);
+                HasCorrectedCustoms := HasCorrectedCustoms or (Line.Amount > 0);
+            until Line.Next() = 0;
+        if not HasCorrectedCustoms then
+            Error('The final chain invoice must include positive destination customs on NAT00000030 with IVA 16.');
+    end;
+
+    local procedure RequirePriorChainCompletion(Operation: Record "MTM MX Cancellation")
+    var
+        Prior: Record "MTM MX Cancellation";
+        PriorOriginal: Record "Sales Invoice Header";
+    begin
+        Prior.SetRange("Replacement No.", Operation."Invoice No.");
+        Prior.SetFilter("Final Invoice No.", '<>%1', '');
+        if Prior.FindSet() then
+            repeat
+                if (Prior."Final Invoice No." <> Operation."Replacement No.") or
+                   (Prior."Final UUID" <> Operation."Replacement UUID") or
+                   (Prior."Final Amount" <> Operation.Amount) or
+                   (Prior."Final Due Date" <> Operation."Replacement Due Date")
+                then
+                    Error('The second chain leg must use the approved final corrected invoice.');
+                Prior.TestField(State, Prior.State::Completed);
+                PriorOriginal.Get(Prior."Invoice No.");
+                VerifyAccountingReversal(Prior, PriorOriginal);
+            until Prior.Next() = 0;
     end;
 
     local procedure ValidateStampedXml(Invoice: Record "Sales Invoice Header"; Operation: Record "MTM MX Cancellation"; IsReplacement: Boolean)

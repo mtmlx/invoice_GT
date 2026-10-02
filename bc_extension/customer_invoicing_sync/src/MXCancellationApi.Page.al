@@ -27,6 +27,13 @@ page 71040 "MTM MX Cancellation API"
                 field(amount; Rec.Amount) { }
                 field(originalAmount; Rec."Original Amount") { }
                 field(replacementDueDate; Rec."Replacement Due Date") { }
+                field(finalInvoiceNumber; Rec."Final Invoice No.") { }
+                field(finalUuid; Rec."Final UUID") { }
+                field(finalAmount; Rec."Final Amount") { }
+                field(finalDueDate; Rec."Final Due Date") { }
+                field(reasonDescription; Rec."Reason Description") { }
+                field(finalSatCheckedAt; Rec."Final SAT Checked At") { }
+                field(finalSatStatus; Rec."Final SAT Status") { }
                 field(state; Rec.State) { }
                 field(requestedAt; Rec."Requested At") { }
                 field(checkedAt; Rec."Checked At") { }

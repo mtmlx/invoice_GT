@@ -1088,6 +1088,41 @@ class BusinessCentralClient:
             market=market,
         )
 
+    def get_mx_certified_invoice_documents(self, invoice_number: str) -> dict[str, bytes]:
+        """Read the stored PAC attachments; never regenerate or transmit them."""
+        import base64
+        from urllib.parse import urljoin
+
+        company = self._resolve_company_id(company_id=None, market="MX")
+        base = (
+            f"https://api.businesscentral.dynamics.com/v2.0/{self.settings.environment}"
+            f"/api/mtmlogix/invoiceSync/v1.0/companies({company})/"
+        )
+        rows = self._request("GET", base + "mxCertifiedInvoiceDocuments", params={
+            "$top": 2, "$filter": "number eq '" + invoice_number.replace("'", "''") + "'",
+        }).get("value", [])
+        if len(rows) != 1 or rows[0].get("number") != invoice_number:
+            raise ValueError("Exact Mexico certified invoice document was not found")
+        documents = {}
+        for field, name in (("pdfBase64Content", "pdf"),):
+            link = rows[0].get(field + "@odata.mediaReadLink")
+            if not link:
+                raise ValueError("Mexico invoice has no stored " + name + " read link")
+            url = urljoin(base, link)
+            if not url.startswith(base):
+                raise ValueError("Certified document link leaves the approved BC company API")
+            raw = self._request_bytes("GET", url)
+            if name == "pdf":
+                raw = base64.b64decode(raw.strip(), validate=True)
+                if not raw.startswith(b"%PDF-"):
+                    raise ValueError("Stored PAC PDF has an invalid header")
+            documents[name] = raw
+        xml = rows[0].get("certifiedXmlBase64")
+        if not xml:
+            raise ValueError("Mexico invoice has no stored certified XML")
+        documents["xml"] = base64.b64decode(xml, validate=True)
+        return documents
+
     def stamp_mx_invoice(
         self,
         posted_invoice_fel_row_id: str,
@@ -1100,6 +1135,29 @@ class BusinessCentralClient:
             "StampMxInvoice",
             company_id=company_id,
             market=market,
+            timeout_seconds=max(self.settings.timeout_seconds, 180),
+        )
+
+    def retry_mx_stamp_after_confirmed_fx_rejection(
+        self,
+        posted_invoice_fel_row_id: str,
+        *,
+        expected_attempt_at: str,
+        expected_amount_including_vat: float,
+        expected_due_date: str,
+        expected_external_document_number: str,
+    ) -> dict[str, Any]:
+        return self._post_posted_invoice_fel_action(
+            posted_invoice_fel_row_id,
+            "RetryMxStampAfterConfirmedFxRejection",
+            body={
+                "expectedAttemptAt": expected_attempt_at,
+                "expectedAmountIncludingVat": expected_amount_including_vat,
+                "expectedDueDate": expected_due_date,
+                "expectedExternalDocumentNumber": expected_external_document_number,
+            },
+            market="MX",
+            timeout_seconds=max(self.settings.timeout_seconds, 180),
         )
 
     def cancel_mx_invoice_with_substitution(
@@ -1124,7 +1182,10 @@ class BusinessCentralClient:
 
     def request_mx_cancellation(self, posted_invoice_fel_row_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Submit once. A successful HTTP response is not fiscal cancellation proof."""
-        action = "RequestMxCorrectedCancellation" if "expectedOriginalAmountIncludingVat" in payload else "RequestMxCancellation"
+        if "finalInvoiceNumber" in payload:
+            action = "RequestMxChainCancellation"
+        else:
+            action = "RequestMxCorrectedCancellation" if "expectedOriginalAmountIncludingVat" in payload else "RequestMxCancellation"
         return self._post_posted_invoice_fel_action(
             posted_invoice_fel_row_id, action, body=payload, market="MX",
             timeout_seconds=180,

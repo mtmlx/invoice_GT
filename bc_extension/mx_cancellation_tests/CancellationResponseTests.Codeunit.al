@@ -24,6 +24,39 @@ codeunit 71940 "MTM MX Cancellation Tests"
             Error('Existing operations must retain their original total semantics.');
     end;
     [Test]
+    procedure ChainCannotUseOriginalAsFinalInvoice()
+    var
+        Management: Codeunit "MTM MX Cancellation Mgt";
+    begin
+        asserterror Management.RequestChainCancellation('ORIGINAL', 'INTERMEDIATE',
+            'original-uuid', 'intermediate-uuid', 'SHIPMENT', 15000, 15307.20,
+            DMY2Date(3, 11, 2026), 'ORIGINAL', 'final-uuid', 15347.20, DMY2Date(3, 11, 2026));
+        if StrPos(GetLastErrorText(), 'three distinct invoice identities') = 0 then
+            Error('A repeated original must fail before any BC setup or PAC access.');
+    end;
+    [Test]
+    procedure ChainFinalRequiresExactCentAmount()
+    var
+        Management: Codeunit "MTM MX Cancellation Mgt";
+    begin
+        asserterror Management.RequestChainCancellation('ORIGINAL', 'INTERMEDIATE',
+            'original-uuid', 'intermediate-uuid', 'SHIPMENT', 15000, 15307.20,
+            DMY2Date(3, 11, 2026), 'FINAL', 'final-uuid', 15347.201, DMY2Date(3, 11, 2026));
+        if StrPos(GetLastErrorText(), 'exact cent amount') = 0 then
+            Error('A non-cent final amount must fail before any BC setup or PAC access.');
+    end;
+    [Test]
+    procedure ChainFinalRequiresCompleteIdentity()
+    var
+        Management: Codeunit "MTM MX Cancellation Mgt";
+    begin
+        asserterror Management.RequestChainCancellation('ORIGINAL', 'INTERMEDIATE',
+            'original-uuid', 'intermediate-uuid', 'SHIPMENT', 15000, 15307.20,
+            DMY2Date(3, 11, 2026), 'FINAL', '', 15347.20, DMY2Date(3, 11, 2026));
+        if StrPos(GetLastErrorText(), 'complete approved final invoice identity') = 0 then
+            Error('A missing final UUID must fail before any BC setup or PAC access.');
+    end;
+    [Test]
     procedure AcceptedRequestIsPendingNotConfirmed()
     var
         Operation: Record "MTM MX Cancellation" temporary;

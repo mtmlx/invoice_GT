@@ -54,3 +54,27 @@ redeployment and changes no Python runtime files.
 
 The Mexico adaptation must preserve the recovered GT code, pass these tests,
 and complete sandbox cancellation/status/accounting tests before release.
+
+## Shared email regression guard
+
+Later approved Mexico releases extended the shared customer email manager and
+its audit objects. A whole-file comparison to .51 cannot distinguish those
+additions from a Guatemala regression. The recovery manifest remains unchanged.
+
+`test_gt_production_baseline.py` now compares all 19 original email procedures'
+Guatemala declarations and executable paths with frozen hashes derived from
+the recovered .51 source at commit `89d5e9d`. That source's complete token hash
+was independently matched to the manifest before generating the comparisons.
+The guard specializes only explicit Mexico conditionals, verifies the market,
+sender, CC, canary dispatch and email detail getters separately, and retains
+the original GT PDF filter/report, recipient fallback, audit transitions,
+native sender, send and Sent Email evidence behavior. Mutation tests prove that
+changes to those paths fail while an explicitly Mexico-only addition passes.
+
+The nine added audit fields and two prepared-intent triggers have separate
+fixed comparisons. Removing only those verified additions must recover the
+exact .51 table and API token hashes. Guatemala cannot prepare a Mexico intent,
+the new Boolean defaults false, and the added triggers leave those unprepared
+audits unaffected. All other recovered GT objects still require their original
+whole-object hashes. These source checks do not claim sandbox or production
+execution of the new extension.
