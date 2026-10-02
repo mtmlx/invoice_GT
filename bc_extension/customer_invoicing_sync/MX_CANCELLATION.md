@@ -1,6 +1,6 @@
 # Mexico Ocean cancellation adaptation
 
-Status: production canary release 0.1.8.62. The user explicitly authorized direct
+Status: corrected-amount release 0.1.8.66. The user explicitly authorized direct
 production execution on 2026-09-29 instead of the proposed sandbox phase.
 
 The verified Guatemala 0.1.8.51 source is preserved. Before creating a replacement,
@@ -19,11 +19,18 @@ mismatch and reconcile ambiguous responses before any next mutation.
 - `RequestMxCancellation` on `postedInvoiceFelDescriptions` accepts a complete
   expected pair: replacement invoice number, original and replacement UUIDs,
   external document number, total including VAT and replacement due date.
+- `RequestMxCorrectedCancellation` adds an independently approved original total.
+  `amount` remains the replacement total; `originalAmount` binds the original.
+  Legacy actions and existing ledger rows retain their equal-total behavior.
+  SAT queries verify each CFDI with its own amount. The PAC cancellation request
+  and corrective BC credit use the original amount, never the replacement amount.
 - This initial controlled route accepts only `MTM_MX_PROD`, sell-to and bill-to
-  `C00067`, USD, matching shipment references and totals, Ocean Freight plus an
+  `C00067`, USD, matching shipment references, independently approved totals, Ocean Freight plus an
   allowlist of Ocean items, INT VAT 0 and NAT VAT 16. Warehouse/distribution items
-  remain excluded. This supports the four reviewed invoices whose totals stay
-  unchanged; it deliberately does not support arbitrary amount-changing reissues.
+  remain excluded. Destination Customs Broker uses NAT00000030 with IVA 16;
+  INT000000016 is accepted on historical originals but refused on replacements.
+  The existing API permission set grants indirect insert/modify on the operation
+  ledger so only the guarded management actions can perform these writes.
 - Both stamped XML documents are checked against header UUID, issuer/recipient
   RFC, currency, subtotal, VAT and total. Replacement XML must contain relation 04
   to exactly the original UUID. It must be active and have the approved due date.
@@ -72,6 +79,10 @@ an external-reference lookup that could select the original.
 Create a private JSON plan with `invoice_number`, `replacement_number`,
 `original_uuid`, `replacement_uuid`, `external_document_number`,
 `amount_including_vat` (decimal string) and `replacement_due_date` (ISO date).
+For a correction, also supply `original_amount_including_vat` (decimal string).
+Never change an existing operation's bound pair or amounts. UW-26-ES-002 already
+has stamped B0003383 with the old IVA: review that extra document and its fiscal
+relations before creating another replacement or attempting any cancellation.
 
 From the repository root with the approved BC configuration:
 

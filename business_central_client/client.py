@@ -1124,8 +1124,9 @@ class BusinessCentralClient:
 
     def request_mx_cancellation(self, posted_invoice_fel_row_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Submit once. A successful HTTP response is not fiscal cancellation proof."""
+        action = "RequestMxCorrectedCancellation" if "expectedOriginalAmountIncludingVat" in payload else "RequestMxCancellation"
         return self._post_posted_invoice_fel_action(
-            posted_invoice_fel_row_id, "RequestMxCancellation", body=payload, market="MX",
+            posted_invoice_fel_row_id, action, body=payload, market="MX",
             timeout_seconds=180,
         )
 

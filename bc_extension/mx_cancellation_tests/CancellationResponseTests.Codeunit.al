@@ -2,6 +2,28 @@ codeunit 71940 "MTM MX Cancellation Tests"
 {
     Subtype = Test;
     [Test]
+    procedure CorrectedAmountsStayBoundToTheirOwnInvoice()
+    var
+        Operation: Record "MTM MX Cancellation" temporary;
+    begin
+        Operation."Original Amount" := 15307.20;
+        Operation.Amount := 15347.20;
+        if Operation.InvoiceAmount(false) <> 15307.20 then
+            Error('Original cancellation and credit must use the original amount.');
+        if Operation.InvoiceAmount(true) <> 15347.20 then
+            Error('Replacement verification must use the corrected amount.');
+    end;
+    [Test]
+    procedure LegacyOperationsKeepTheirApprovedAmount()
+    var
+        Operation: Record "MTM MX Cancellation" temporary;
+    begin
+        Operation.Amount := 15307.20;
+        if (Operation.InvoiceAmount(false) <> 15307.20) or
+           (Operation.InvoiceAmount(true) <> 15307.20) then
+            Error('Existing operations must retain their original total semantics.');
+    end;
+    [Test]
     procedure AcceptedRequestIsPendingNotConfirmed()
     var
         Operation: Record "MTM MX Cancellation" temporary;

@@ -21,6 +21,7 @@ class MxReplacement:
     external_document_number: str
     amount_including_vat: Decimal
     replacement_due_date: date
+    original_amount_including_vat: Decimal | None = None
 
     def payload(self) -> dict[str, Any]:
         original = str(UUID(self.original_uuid)).upper()
@@ -32,7 +33,7 @@ class MxReplacement:
         amount = Decimal(str(self.amount_including_vat))
         if not amount.is_finite() or amount <= 0 or amount != amount.quantize(Decimal("0.01")):
             raise ValueError("Expected total must be a positive, exact cent amount")
-        return {
+        payload = {
             "substitutionInvoiceNumber": self.replacement_number,
             "expectedOriginalUuid": original,
             "expectedReplacementUuid": replacement,
@@ -40,6 +41,12 @@ class MxReplacement:
             "expectedAmountIncludingVat": float(amount),
             "expectedReplacementDueDate": self.replacement_due_date.isoformat(),
         }
+        if self.original_amount_including_vat is not None:
+            original_amount = Decimal(str(self.original_amount_including_vat))
+            if not original_amount.is_finite() or original_amount <= 0 or original_amount != original_amount.quantize(Decimal("0.01")):
+                raise ValueError("Expected original total must be a positive, exact cent amount")
+            payload["expectedOriginalAmountIncludingVat"] = float(original_amount)
+        return payload
 
 
 def _validate_operation(row: dict[str, Any], plan: MxReplacement) -> None:
@@ -56,6 +63,10 @@ def _validate_operation(row: dict[str, Any], plan: MxReplacement) -> None:
             raise ValueError("BC cancellation UUID differs from the approved replacement")
     if Decimal(str(row["amount"])) != Decimal(str(plan.amount_including_vat)):
         raise ValueError("BC cancellation total differs from the approved amount")
+    expected_original = plan.original_amount_including_vat or plan.amount_including_vat
+    actual_original = row.get("originalAmount") or row["amount"]
+    if Decimal(str(actual_original)) != Decimal(str(expected_original)):
+        raise ValueError("BC cancellation original total differs from the approved amount")
 
 
 def advance_mx_cancellation(

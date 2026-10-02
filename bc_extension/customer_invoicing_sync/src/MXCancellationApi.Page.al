@@ -25,6 +25,7 @@ page 71040 "MTM MX Cancellation API"
                 field(replacementUuid; Rec."Replacement UUID") { }
                 field(externalDocumentNumber; Rec."External Document No.") { }
                 field(amount; Rec.Amount) { }
+                field(originalAmount; Rec."Original Amount") { }
                 field(replacementDueDate; Rec."Replacement Due Date") { }
                 field(state; Rec.State) { }
                 field(requestedAt; Rec."Requested At") { }

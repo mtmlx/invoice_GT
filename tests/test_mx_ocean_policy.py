@@ -92,13 +92,51 @@ def test_exact_grouped_charges_tax_and_due_date():
     assert len(result["line_sources"][0]["source_components"]) == 2
     assert len(result["line_sources"][1]["source_components"]) == 2
     assert result["mx_ocean_policy"]["vat_breakdown"] == {
-        "INT": {"vat_rate": 0, "subtotal": 11123.14, "vat": 0.0},
-        "NAT": {"vat_rate": 16, "subtotal": 3606.95, "vat": 577.11}}
+        "INT": {"vat_rate": 0, "subtotal": 10873.14, "vat": 0.0},
+        "NAT": {"vat_rate": 16, "subtotal": 3856.95, "vat": 617.11}}
     header = result["proposed_bc_payload"]
     assert result["eta_date"] == "2026-10-04"
     assert header["dueDate"] == "2026-11-03"
     assert header["invoiceDate"] == header["postingDate"] == "2026-09-29"
     assert header["paymentTermsId"] == "mx-term-ppd"
+
+
+@pytest.mark.parametrize("amounts,subtotal,vat,total", [
+    ([2823.53, 335.29, 0, 0, 0, 0, 0, 76.47, 0, 185, 0, 0, 205.88, 765, 3941.18, 0, 0, 0], 8332.35, 785.93, 9118.28),
+    (AMOUNTS, 14730.09, 617.11, 15347.20),
+    ([3881, 2331, 2583, 888, 0, 0, 0, 0, 0, 293, 219, 58, 115, 201, 3105, 0, 0, 0], 13674, 591.68, 14265.68),
+    ([3708.75, 1731.90, 5357.85, 577.30, 0, 0, 0, 32.20, 0, 171.35, 247.25, 172.50, 115, 0, 3105, 0, 0, 0], 15219.10, 582.36, 15801.46),
+], ids=["CIMX30100066", "UW-26-ES-002", "UW-26-FR-002", "UW-26-ES-003"])
+def test_four_shipments_destination_customs_vat(amounts, subtotal, vat, total):
+    summary, settings = fixture()
+    for mapping, amount in zip(settings.charge_mappings, amounts):
+        summary["custom_fields"][mapping.clickup_field_name]["value"] = str(amount)
+    result = preview(summary, settings)
+    assert result["status"] == "dry_run_ready", result
+    breakdown = result["mx_ocean_policy"]["vat_breakdown"]
+    assert result["invoice_validation"]["expected_total"] == subtotal
+    assert sum(policy.money(group["vat"]) for group in breakdown.values()) == policy.money(vat)
+    assert policy.money(subtotal) + policy.money(vat) == policy.money(total)
+    destination = [line for line in result["proposed_bc_line_payloads"]
+                   if line["lineObjectNumber"] == "NAT00000030"]
+    assert len(destination) == (1 if amounts[13] else 0)
+    assert not any(line["lineObjectNumber"] == "INT000000016"
+                   for line in result["proposed_bc_line_payloads"])
+
+
+def test_destination_customs_zero_vat_readback_blocks_posting():
+    class WrongCustomsVAT(OceanBC):
+        def get_posted_sales_invoice_lines(self, invoice_id, **kwargs):
+            lines = super().get_posted_sales_invoice_lines(invoice_id, **kwargs)
+            for line in lines:
+                if line["lineObjectNumber"] == "NAT00000030":
+                    line["taxPercent"] = 0
+            return lines
+    summary, settings = fixture()
+    bc = WrongCustomsVAT()
+    result = issue_clickup_bc_sales_invoice(clickup_summary=summary, settings=settings, bc_client=bc)
+    assert result["failed_stage"] == "verify_mx_ocean_draft"
+    assert not bc.posted_invoices and not bc.mx_stamp_calls
 
 
 def test_shared_item_does_not_merge_other_fees():
@@ -181,7 +219,7 @@ def test_readback_rejects_drift(drift):
     bc = OceanBC()
     bc.created_lines = expected
     actual = bc.get_posted_sales_invoice_lines("id")
-    invoice = {**header, "totalAmountExcludingTax":14730.09, "totalTaxAmount":577.11, "totalAmountIncludingTax":15307.20}
+    invoice = {**header, "totalAmountExcludingTax":14730.09, "totalTaxAmount":617.11, "totalAmountIncludingTax":15347.20}
     if drift == "vat": actual[0]["taxPercent"] = 16
     elif drift == "amount": actual[0]["amountExcludingTax"] = 1
     elif drift == "description": actual[0]["description"] = "wrong charge"

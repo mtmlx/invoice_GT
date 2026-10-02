@@ -408,6 +408,21 @@ page 71007 "MTM Posted Inv FEL Desc API"
     end;
 
     [ServiceEnabled]
+    procedure RequestMxCorrectedCancellation(substitutionInvoiceNumber: Text; expectedOriginalUuid: Text; expectedReplacementUuid: Text; expectedExternalDocumentNumber: Text; expectedOriginalAmountIncludingVat: Decimal; expectedAmountIncludingVat: Decimal; expectedReplacementDueDate: Date; var ActionContext: WebServiceActionContext)
+    var
+        Management: Codeunit "MTM MX Cancellation Mgt";
+    begin
+        if (StrLen(substitutionInvoiceNumber) > 20) or (StrLen(expectedExternalDocumentNumber) > 35) then
+            Error('Invoice identity exceeds Business Central field limits.');
+        Management.RequestCorrectedCancellation(Rec."No.", CopyStr(substitutionInvoiceNumber, 1, 20), expectedOriginalUuid,
+            expectedReplacementUuid, CopyStr(expectedExternalDocumentNumber, 1, 35), expectedOriginalAmountIncludingVat, expectedAmountIncludingVat, expectedReplacementDueDate);
+        ActionContext.SetObjectType(ObjectType::Page);
+        ActionContext.SetObjectId(Page::"MTM Posted Inv FEL Desc API");
+        ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
+        ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
+    end;
+
+    [ServiceEnabled]
     procedure CancelMxInvoiceWithSubstitution(substitutionInvoiceNumber: Text; cancellationReasonId: Text; var ActionContext: WebServiceActionContext)
     var
         MXCfdiMgt: Codeunit "MTM MX Posted Inv CFDI Mgt";
