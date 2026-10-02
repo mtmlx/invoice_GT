@@ -1138,6 +1138,28 @@ class BusinessCentralClient:
             timeout_seconds=max(self.settings.timeout_seconds, 180),
         )
 
+    def retry_mx_stamp_after_confirmed_fx_rejection(
+        self,
+        posted_invoice_fel_row_id: str,
+        *,
+        expected_attempt_at: str,
+        expected_amount_including_vat: float,
+        expected_due_date: str,
+        expected_external_document_number: str,
+    ) -> dict[str, Any]:
+        return self._post_posted_invoice_fel_action(
+            posted_invoice_fel_row_id,
+            "RetryMxStampAfterConfirmedFxRejection",
+            body={
+                "expectedAttemptAt": expected_attempt_at,
+                "expectedAmountIncludingVat": expected_amount_including_vat,
+                "expectedDueDate": expected_due_date,
+                "expectedExternalDocumentNumber": expected_external_document_number,
+            },
+            market="MX",
+            timeout_seconds=max(self.settings.timeout_seconds, 180),
+        )
+
     def cancel_mx_invoice_with_substitution(
         self,
         posted_invoice_fel_row_id: str,

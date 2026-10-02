@@ -3,6 +3,68 @@ codeunit 71941 "MTM MX Secure Stamp Tests"
     Subtype = Test;
 
     [Test]
+    procedure PacExchangeRateRetainsExactlyFourDecimals()
+    var
+        Stamper: Codeunit "MTM MX Secure Stamp Mgt";
+    begin
+        if Stamper.FormatPacExchangeRate(18.071) <> '18.0710' then
+            Error('The PAC requires a trailing zero when the rate has three decimals.');
+        if Stamper.FormatPacExchangeRate(18) <> '18.0000' then
+            Error('Whole exchange rates must still carry four decimal places.');
+        if Stamper.FormatPacExchangeRate(18.071051) <> '18.0711' then
+            Error('Exchange rates must round to four decimal places before formatting.');
+    end;
+
+    [Test]
+    procedure OnlyTheExactDefinitiveFxRejectionCanRetryOnce()
+    var
+        Attempt: Record "MTM MX Stamp Attempt" temporary;
+        UTC: DateTime;
+    begin
+        Evaluate(UTC, '2026-10-02T15:15:00Z', 9);
+        Attempt.Outcome := Attempt.Outcome::Rejected;
+        Attempt."HTTP Status" := 200;
+        Attempt."Error Code" := '101';
+        Attempt.Diagnostic := 'Es necesario ingresar el tipo de cambio a 4 decimales';
+        Attempt."Attempted At UTC" := UTC;
+        Attempt."Approved Total" := 16034.91;
+        if not Attempt.IsConfirmedFxRejection(UTC, 16034.91) then
+            Error('The confirmed first legacy FX rejection must permit its explicit guarded retry.');
+        if Attempt.IsConfirmedFxRejection(UTC, 16034.90) then
+            Error('A changed approved total must block the retry.');
+        if Attempt.IsConfirmedFxRejection(UTC + 1000, 16034.91) then
+            Error('A different prior attempt timestamp must block the retry.');
+        Attempt.Outcome := Attempt.Outcome::Unknown;
+        if Attempt.IsConfirmedFxRejection(UTC, 16034.91) then
+            Error('An unknown outcome must never permit retry.');
+        Attempt.Outcome := Attempt.Outcome::Rejected;
+        Attempt."Attempt Count" := 2;
+        if Attempt.IsConfirmedFxRejection(UTC, 16034.91) then
+            Error('A second controlled attempt must never authorize another retry.');
+    end;
+
+    [Test]
+    procedure OtherProviderRejectionsCannotUseTheFxRetry()
+    var
+        Attempt: Record "MTM MX Stamp Attempt" temporary;
+        UTC: DateTime;
+    begin
+        Evaluate(UTC, '2026-10-02T15:15:00Z', 9);
+        Attempt.Outcome := Attempt.Outcome::Rejected;
+        Attempt."HTTP Status" := 200;
+        Attempt."Error Code" := '101';
+        Attempt.Diagnostic := 'Different rejection';
+        Attempt."Attempted At UTC" := UTC;
+        Attempt."Approved Total" := 16034.91;
+        if Attempt.IsConfirmedFxRejection(UTC, 16034.91) then
+            Error('A generic 101 rejection must not permit the FX retry.');
+        Attempt.Diagnostic := 'Es necesario ingresar el tipo de cambio a 4 decimales';
+        Attempt."Fiscal UUID" := 'BB14B70F-21D0-423B-8C6D-F2D46BDAD658';
+        if Attempt.IsConfirmedFxRejection(UTC, 16034.91) then
+            Error('A response containing a fiscal UUID must block retry.');
+    end;
+
+    [Test]
     procedure PacTaxCataloguesStayDistinctFromSatXmlCodes()
     var
         Stamper: Codeunit "MTM MX Secure Stamp Mgt";

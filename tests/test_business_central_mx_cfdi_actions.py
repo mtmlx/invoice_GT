@@ -78,6 +78,23 @@ def test_set_mx_payment_fields_posts_terms_and_method() -> None:
     assert result["market"] == "MX"
 
 
+def test_fx_retry_binds_confirmed_attempt_and_approved_invoice():
+    client = FakeBusinessCentralClient()
+    result = client.retry_mx_stamp_after_confirmed_fx_rejection(
+        "posted-row-id", expected_attempt_at="2026-10-02T21:13:20.017Z",
+        expected_amount_including_vat=16034.91, expected_due_date="2026-11-15",
+        expected_external_document_number="UW-26-ES-003",
+    )
+    assert result["path"].endswith("/Microsoft.NAV.RetryMxStampAfterConfirmedFxRejection")
+    assert result["payload"] == {
+        "expectedAttemptAt": "2026-10-02T21:13:20.017Z",
+        "expectedAmountIncludingVat": 16034.91,
+        "expectedDueDate": "2026-11-15",
+        "expectedExternalDocumentNumber": "UW-26-ES-003",
+    }
+    assert result["market"] == "MX" and result["timeout_seconds"] == 180
+
+
 def test_cancel_mx_invoice_with_substitution_posts_reason_and_substitute() -> None:
     client = FakeBusinessCentralClient()
 

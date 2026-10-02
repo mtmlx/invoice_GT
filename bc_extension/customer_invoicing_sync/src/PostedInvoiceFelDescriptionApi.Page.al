@@ -385,6 +385,21 @@ page 71007 "MTM Posted Inv FEL Desc API"
         ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
         ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
     end;
+
+    [ServiceEnabled]
+    procedure RetryMxStampAfterConfirmedFxRejection(expectedAttemptAt: DateTime; expectedAmountIncludingVat: Decimal; expectedDueDate: Date; expectedExternalDocumentNumber: Text; var ActionContext: WebServiceActionContext)
+    var
+        StampMgt: Codeunit "MTM MX Secure Stamp Mgt";
+    begin
+        if StrLen(expectedExternalDocumentNumber) > 35 then
+            Error('Shipment identity exceeds Business Central field limits.');
+        StampMgt.RetryConfirmedFxRejection(Rec, expectedAttemptAt, expectedAmountIncludingVat,
+            expectedDueDate, expectedExternalDocumentNumber);
+        ActionContext.SetObjectType(ObjectType::Page);
+        ActionContext.SetObjectId(Page::"MTM Posted Inv FEL Desc API");
+        ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
+        ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
+    end;
     [ServiceEnabled]
     procedure CheckMxReplacementReadiness(expectedOriginalUuid: Text; expectedExternalDocumentNumber: Text; expectedAmountIncludingVat: Decimal; var ActionContext: WebServiceActionContext)
     var

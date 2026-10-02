@@ -12,15 +12,9 @@ codeunit 71042 "MTM MX Secure Stamp Mgt"
     var
         Attempt: Record "MTM MX Stamp Attempt";
         Request: HttpRequestMessage;
-        Response: HttpResponseMessage;
-        Client: HttpClient;
-        ResponseBody: Text;
-        Result: JsonObject;
         FiscalTime: Text;
-        StampUUID: Text;
-        InvoiceRef: RecordRef;
     begin
-        ValidateInvoiceScope(Invoice);
+        ValidateInvoiceScope(Invoice, false);
         Attempt.LockTable();
         if Attempt.Get(Invoice."No.") then
             Error('Invoice %1 already has a controlled stamp attempt (%2). Review the PAC result before any retry.', Invoice."No.", Attempt.Outcome);
@@ -32,11 +26,66 @@ codeunit 71042 "MTM MX Secure Stamp Mgt"
         Attempt."Attempted At UTC" := CurrentDateTime();
         Attempt."Fiscal Timestamp" := CopyStr(FiscalTime, 1, 19);
         Attempt."Approved Total" := Invoice."Amount Including VAT";
+        Attempt."Attempt Count" := 1;
         Attempt.Outcome := Attempt.Outcome::Unknown;
         Attempt."Error Code" := 'REQUEST_IN_FLIGHT';
         Attempt.Diagnostic := 'The PAC request may have executed. Do not retry without reconciliation.';
         Attempt.Insert(true);
         Commit();
+        SubmitPreparedRequest(Invoice, Attempt, Request);
+    end;
+
+    [NonDebuggable]
+    procedure RetryConfirmedFxRejection(var Invoice: Record "Sales Invoice Header"; ExpectedAttemptAt: DateTime; ExpectedTotal: Decimal; ExpectedDueDate: Date; ExpectedReference: Text)
+    var
+        Attempt: Record "MTM MX Stamp Attempt";
+        Request: HttpRequestMessage;
+        FiscalTime: Text;
+    begin
+        ValidateInvoiceScope(Invoice, true);
+        Attempt.LockTable();
+        if not Attempt.Get(Invoice."No.") then
+            Error('A prior definitive FX rejection is required for this explicit retry.');
+        if not Attempt.IsConfirmedFxRejection(ExpectedAttemptAt, ExpectedTotal) then
+            Error('The prior PAC attempt is not the exact confirmed FX-format rejection approved for retry.');
+        if Attempt."Invoice SystemId" <> Invoice.SystemId then
+            Error('The rejected attempt belongs to a different posted invoice.');
+        if (ExpectedTotal <> Invoice."Amount Including VAT") or
+            (ExpectedDueDate = 0D) or (ExpectedDueDate <> Invoice."Due Date") or
+            (ExpectedReference = '') or (ExpectedReference <> Invoice."External Document No.") then
+            Error('The posted invoice reference, approved total or due date changed before the FX retry.');
+        RequireFieldValue(Invoice, 'Error Code', '101');
+        RequireFieldValue(Invoice, 'Electronic Document Status', 'Stamp Request Error');
+        FiscalTime := MexicoFiscalTimestamp(CurrentDateTime());
+        PrepareRequest(Invoice, FiscalTime, Request);
+        // Retain the definitive rejection; never delete an attempt to enable a
+        // retry. A second Unknown marker is committed before the only PAC POST.
+        Attempt."Previous Attempted At UTC" := Attempt."Attempted At UTC";
+        Attempt."Previous Error Code" := Attempt."Error Code";
+        Attempt."Previous Diagnostic" := Attempt.Diagnostic;
+        Attempt."Previous HTTP Status" := Attempt."HTTP Status";
+        Attempt."Attempt Count" := 2;
+        Attempt."Attempted At UTC" := CurrentDateTime();
+        Attempt."Fiscal Timestamp" := CopyStr(FiscalTime, 1, 19);
+        Attempt."HTTP Status" := 0;
+        Attempt.Outcome := Attempt.Outcome::Unknown;
+        Attempt."Error Code" := 'REQUEST_IN_FLIGHT';
+        Attempt.Diagnostic := 'Explicit retry of the confirmed FX-format rejection is in flight; no further automatic retry is allowed.';
+        Attempt.Modify(true);
+        Commit();
+        SubmitPreparedRequest(Invoice, Attempt, Request);
+    end;
+
+    [NonDebuggable]
+    local procedure SubmitPreparedRequest(var Invoice: Record "Sales Invoice Header"; var Attempt: Record "MTM MX Stamp Attempt"; var Request: HttpRequestMessage)
+    var
+        Response: HttpResponseMessage;
+        Client: HttpClient;
+        ResponseBody: Text;
+        Result: JsonObject;
+        StampUUID: Text;
+        InvoiceRef: RecordRef;
+    begin
         Client.Timeout(60000);
         // The durable Unknown marker precedes the only mutating HTTP request.
         if not Client.Send(Request, Response) then begin
@@ -93,7 +142,9 @@ codeunit 71042 "MTM MX Secure Stamp Mgt"
             exit('');
         exit('Outcome=' + Format(Attempt.Outcome) + '|HTTP=' + Format(Attempt."HTTP Status") +
             '|Code=' + Attempt."Error Code" + '|AttemptUTC=' + Format(Attempt."Attempted At UTC", 0, 9) +
-            '|FiscalTimestamp=' + Attempt."Fiscal Timestamp" + '|UUID=' + Attempt."Fiscal UUID" + '|Detail=' + Attempt.Diagnostic);
+            '|FiscalTimestamp=' + Attempt."Fiscal Timestamp" + '|UUID=' + Attempt."Fiscal UUID" +
+            '|AttemptCount=' + Format(Attempt."Attempt Count") + '|PriorAttemptUTC=' + Format(Attempt."Previous Attempted At UTC", 0, 9) +
+            '|PriorCode=' + Attempt."Previous Error Code" + '|Detail=' + Attempt.Diagnostic);
     end;
 
     procedure MexicoFiscalTimestamp(UtcDateTime: DateTime): Text
@@ -103,7 +154,25 @@ codeunit 71042 "MTM MX Secure Stamp Mgt"
         exit(CopyStr(Format(UtcDateTime - 21600000, 0, 9), 1, 19));
     end;
 
-    local procedure ValidateInvoiceScope(var Invoice: Record "Sales Invoice Header")
+    procedure FormatPacExchangeRate(Value: Decimal): Text
+    var
+        Invariant: Text;
+        Point: Integer;
+        DecimalCount: Integer;
+    begin
+        if Value <= 0 then
+            Error('A positive approved exchange rate is required.');
+        Invariant := Format(Round(Value, 0.0001, '='), 0, 9);
+        Point := StrPos(Invariant, '.');
+        if Point = 0 then
+            exit(Invariant + '.0000');
+        DecimalCount := StrLen(Invariant) - Point;
+        if DecimalCount > 4 then
+            Error('The approved exchange rate has invalid precision.');
+        exit(Invariant + PadStr('', 4 - DecimalCount, '0'));
+    end;
+
+    local procedure ValidateInvoiceScope(var Invoice: Record "Sales Invoice Header"; AllowConfirmedFxRetry: Boolean)
     var
         Line: Record "Sales Invoice Line";
         VATGroup: Record "VAT Product Posting Group";
@@ -126,7 +195,10 @@ codeunit 71042 "MTM MX Secure Stamp Mgt"
         if (DelChr(Status, '=', ' ') <> '') and (Status <> 'Stamp Request Error') then
             Error('Invoice has an unsupported electronic document status.');
         if Status = 'Stamp Request Error' then
-            RequireFieldValue(Invoice, 'Error Code', '017');
+            if AllowConfirmedFxRetry then
+                RequireFieldValue(Invoice, 'Error Code', '101')
+            else
+                RequireFieldValue(Invoice, 'Error Code', '017');
         Line.SetRange("Document No.", Invoice."No.");
         if Line.FindSet() then
             repeat
@@ -280,7 +352,7 @@ codeunit 71042 "MTM MX Secure Stamp Mgt"
         Header.Add('Moneda', Invoice."Currency Code");
         if Invoice."Currency Factor" = 0 then
             Error('A Mexico USD invoice requires its approved currency factor.');
-        Header.Add('TipoCambio', Format(Round(1 / Invoice."Currency Factor", 0.0001), 0, 9));
+        Header.Add('TipoCambio', FormatPacExchangeRate(1 / Invoice."Currency Factor"));
         Header.Add('LugarExpedicion', ReadText(Company, 'SAT Postal Code'));
         Header.Add('observaciones', Invoice.Observaciones + ' | Embarque: ' + Invoice."External Document No." +
             ' | Vencimiento: ' + Format(Invoice."Due Date", 0, 9));

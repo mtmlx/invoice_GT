@@ -15,7 +15,7 @@ SRC = ROOT / 'bc_extension/customer_invoicing_sync/src'
 EVIDENCE = ROOT / 'docs/gt-baseline'
 CONTRACT = json.loads((EVIDENCE / 'production-api-contract.json').read_text())
 TYPE_MAP = {'Text': 'Edm.String', 'Decimal': 'Edm.Decimal', 'Boolean': 'Edm.Boolean',
-            'Guid': 'Edm.Guid', 'Integer': 'Edm.Int32', 'Date': 'Edm.Date'}
+            'Guid': 'Edm.Guid', 'Integer': 'Edm.Int32', 'Date': 'Edm.Date', 'DateTime': 'Edm.DateTimeOffset'}
 
 
 def _al_tokens(source):
