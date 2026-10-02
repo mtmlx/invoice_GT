@@ -46,6 +46,12 @@ codeunit 71040 "MTM MX Cancellation Mgt"
     end;
 
     procedure RequestCancellation(InvoiceNo: Code[20]; ReplacementNo: Code[20]; ExpectedOriginalUUID: Text; ExpectedReplacementUUID: Text; ExpectedReference: Code[35]; ExpectedAmount: Decimal; ExpectedDueDate: Date)
+    begin
+        RequestCorrectedCancellation(InvoiceNo, ReplacementNo, ExpectedOriginalUUID,
+            ExpectedReplacementUUID, ExpectedReference, ExpectedAmount, ExpectedAmount, ExpectedDueDate);
+    end;
+
+    procedure RequestCorrectedCancellation(InvoiceNo: Code[20]; ReplacementNo: Code[20]; ExpectedOriginalUUID: Text; ExpectedReplacementUUID: Text; ExpectedReference: Code[35]; ExpectedOriginalAmount: Decimal; ExpectedAmount: Decimal; ExpectedDueDate: Date)
     var
         Operation: Record "MTM MX Cancellation";
         Original: Record "Sales Invoice Header";
@@ -57,9 +63,12 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         Request: HttpRequestMessage;
     begin
         if (ExpectedOriginalUUID = '') or (ExpectedReplacementUUID = '') or
-           (ExpectedReference = '') or (ExpectedAmount <= 0) or (ExpectedDueDate = 0D)
+           (ExpectedReference = '') or (ExpectedOriginalAmount <= 0) or (ExpectedAmount <= 0) or (ExpectedDueDate = 0D)
         then
             Error('A complete approved replacement identity is required.');
+        if (Round(ExpectedOriginalAmount, 0.01) <> ExpectedOriginalAmount) or
+           (Round(ExpectedAmount, 0.01) <> ExpectedAmount) then
+            Error('Approved invoice amounts must be exact cent amounts.');
         Operation."Invoice No." := InvoiceNo;
         Operation."Replacement No." := ReplacementNo;
         Operation."Original UUID" := UpperCase(ExpectedOriginalUUID);
@@ -68,6 +77,7 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         Operation."Customer No." := 'C00067';
         Operation."Currency Code" := 'USD';
         Operation.Amount := ExpectedAmount;
+        Operation."Original Amount" := ExpectedOriginalAmount;
         Operation."Replacement Due Date" := ExpectedDueDate;
         Company.Get();
         Customer.Get(Operation."Customer No.");
@@ -184,6 +194,7 @@ codeunit 71040 "MTM MX Cancellation Mgt"
            (Existing."Replacement UUID" <> Expected."Replacement UUID") or
            (Existing."External Document No." <> Expected."External Document No.") or
            (Existing.Amount <> Expected.Amount) or
+           (Existing.InvoiceAmount(false) <> Expected.InvoiceAmount(false)) or
            (Existing."Issuer RFC" <> Expected."Issuer RFC") or
            (Existing."Recipient RFC" <> Expected."Recipient RFC") or
            (Existing."Replacement Due Date" <> Expected."Replacement Due Date")
@@ -228,7 +239,7 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         Invoice.TestField("Currency Code", Operation."Currency Code");
         Invoice.TestField("External Document No.", Operation."External Document No.");
         Invoice.CalcFields("Amount Including VAT");
-        if Invoice."Amount Including VAT" <> Operation.Amount then
+        if Invoice."Amount Including VAT" <> Operation.InvoiceAmount(IsReplacement) then
             Error('Invoice %1 total differs from the approved amount.', Invoice."No.");
         if IsReplacement then begin
             if UpperCase(ReadField(Invoice, 'Fiscal Invoice Number PAC')) <> Operation."Replacement UUID" then
@@ -243,9 +254,11 @@ codeunit 71040 "MTM MX Cancellation Mgt"
                     Line.TestField(Type, Line.Type::Item);
                     if not (Line."No." in ['INT000000026', 'INT000000011', 'INT000000017',
                         'INT000000028', 'INT000000022', 'INT000000031', 'INT000000007', 'INT000000016',
-                        'NAT00000037', 'NAT00000009', 'NAT00000010', 'NAT00000015'])
+                        'NAT00000037', 'NAT00000009', 'NAT00000010', 'NAT00000015', 'NAT00000030'])
                     then
                         Error('Item %1 is outside the approved USD Ocean path.', Line."No.");
+                    if IsReplacement and (Line."No." = 'INT000000016') then
+                        Error('Destination customs must use NAT00000030 with IVA 16 on the replacement.');
                     if Line."No." = 'INT000000026' then
                         HasOceanFreight := true;
                     if CopyStr(Line."No.", 1, 3) = 'INT' then
@@ -299,7 +312,7 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         RequireXmlAttribute(Document, Ns, '/c:Comprobante/@Moneda', Operation."Currency Code");
         if not Document.SelectSingleNode('/c:Comprobante/@Total', Ns, Node) then
             Error('Stamped XML total is missing.');
-        if not Evaluate(Total, Node.AsXmlAttribute().Value(), 9) or (Total <> Operation.Amount) then
+        if not Evaluate(Total, Node.AsXmlAttribute().Value(), 9) or (Total <> Operation.InvoiceAmount(IsReplacement)) then
             Error('Stamped XML total differs from the approved total.');
         Invoice.CalcFields(Amount, "Amount Including VAT");
         if not Document.SelectSingleNode('/c:Comprobante/@SubTotal', Ns, Node) then
@@ -374,7 +387,7 @@ codeunit 71040 "MTM MX Cancellation Mgt"
         CreditEntry.FindFirst();
         CreditEntry.CalcFields(Amount, "Remaining Amount");
         CreditEntry.TestField("Currency Code", Operation."Currency Code");
-        CreditEntry.TestField(Amount, -Operation.Amount);
+        CreditEntry.TestField(Amount, -Operation.InvoiceAmount(false));
         CreditEntry.TestField("Remaining Amount", 0);
         CreditEntry.TestField(Open, false);
     end;

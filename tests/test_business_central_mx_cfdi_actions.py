@@ -164,3 +164,17 @@ def test_cancel_posted_credit_memo_fel_with_issue_datetime_posts_override() -> N
         "issueDateTimeText": "2026-06-17T12:00:00",
     }
     assert result["market"] == "GT"
+
+
+def test_corrected_cancellation_uses_additive_action_without_changing_legacy(monkeypatch) -> None:
+    client = FakeBusinessCentralClient()
+    calls = []
+    def post(invoice_id, action, **kwargs):
+        calls.append((invoice_id, action, kwargs))
+        return {}
+    monkeypatch.setattr(client, "_post_posted_invoice_fel_action", post)
+    client.request_mx_cancellation("old-row", {"expectedAmountIncludingVat": 15307.2})
+    client.request_mx_cancellation("old-row", {"expectedAmountIncludingVat": 15347.2,
+                                               "expectedOriginalAmountIncludingVat": 15307.2})
+    assert [call[1] for call in calls] == ["RequestMxCancellation", "RequestMxCorrectedCancellation"]
+    assert all(call[2]["market"] == "MX" and call[2]["timeout_seconds"] == 180 for call in calls)

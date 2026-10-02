@@ -35,7 +35,7 @@ codeunit 71041 "MTM MX Cancellation Provider"
         Body.Add('Uuid', Operation."Original UUID");
         Body.Add('Motivo', '01');
         Body.Add('FolioFiscalSustitucion', Operation."Replacement UUID");
-        Body.Add('Total', Operation.Amount);
+        Body.Add('Total', Operation.InvoiceAmount(false));
         Body.Add('Certificado', Certificate);
         Body.Add('LlavePrivada', PrivateKey);
         Body.Add('Password', Setup."CSD Password");
@@ -132,7 +132,7 @@ codeunit 71041 "MTM MX Cancellation Provider"
         if Replacement then
             FiscalUUID := Operation."Replacement UUID";
         Expression := '?re=' + Operation."Issuer RFC" + '&rr=' + Operation."Recipient RFC" +
-            '&tt=' + Format(Operation.Amount, 0, 9) + '&id=' + FiscalUUID;
+            '&tt=' + Format(Operation.InvoiceAmount(Replacement), 0, 9) + '&id=' + FiscalUUID;
         Xml := XmlDocument.Create();
         // An empty standalone argument serializes as invalid standalone="".
         Xml.SetDeclaration(XmlDeclaration.Create('1.0', 'utf-8', 'no'));

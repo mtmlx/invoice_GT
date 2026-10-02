@@ -148,3 +148,33 @@ def test_self_substitution_is_rejected():
     from dataclasses import replace
     with pytest.raises(ValueError, match="substitute itself"):
         replace(PLAN, replacement_uuid=PLAN.original_uuid).payload()
+
+
+def test_tax_correction_preserves_independent_original_and_replacement_totals():
+    from dataclasses import replace
+    corrected = replace(PLAN, amount_including_vat=Decimal("15347.20"),
+                        original_amount_including_vat=Decimal("15307.20"))
+    payload = corrected.payload()
+    assert payload["expectedOriginalAmountIncludingVat"] == 15307.2
+    assert payload["expectedAmountIncludingVat"] == 15347.2
+    existing = {**row("Completed"), "amount": "15347.20", "originalAmount": "15307.20"}
+    bc = FakeBC(existing)
+    assert advance_mx_cancellation(bc, corrected, apply=True)["status"] == "completed"
+    assert bc.calls == []
+
+
+def test_original_total_drift_blocks_even_when_replacement_total_matches():
+    from dataclasses import replace
+    corrected = replace(PLAN, amount_including_vat=Decimal("15347.20"),
+                        original_amount_including_vat=Decimal("15307.20"))
+    bc = FakeBC({**row(), "amount": "15347.20", "originalAmount": "15307.21"})
+    with pytest.raises(ValueError, match="original total"):
+        advance_mx_cancellation(bc, corrected, apply=True)
+    assert bc.calls == []
+
+
+@pytest.mark.parametrize("amount", ["0", "-1", "1.001", "NaN", "Infinity"])
+def test_invalid_original_total_blocks_before_reads(amount):
+    from dataclasses import replace
+    with pytest.raises(ValueError):
+        replace(PLAN, original_amount_including_vat=Decimal(amount)).payload()

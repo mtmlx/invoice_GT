@@ -13,7 +13,7 @@ permissionset 71000 "MTM CUST INV API"
         tabledata "Sales Invoice Line" = RM,
         tabledata "Sent Email" = R,
         tabledata "MTM Invoice Email Audit" = RIMD,
-        tabledata "MTM MX Cancellation" = R,
+        tabledata "MTM MX Cancellation" = Rim,
         codeunit "MTM MX Cancellation Mgt" = X,
         codeunit "MTM MX Cancellation Provider" = X,
         page "MTM MX Cancellation API" = X,

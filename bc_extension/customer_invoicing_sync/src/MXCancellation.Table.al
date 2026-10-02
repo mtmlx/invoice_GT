@@ -29,6 +29,15 @@ table 71040 "MTM MX Cancellation"
         field(21; "Requested By"; Guid) { }
         field(22; "Credit Memo No."; Code[20]) { }
         field(23; "Accounting Attempted At"; DateTime) { }
+        field(24; "Original Amount"; Decimal) { }
     }
     keys { key(PK; "Invoice No.") { Clustered = true; } }
+
+    procedure InvoiceAmount(IsReplacement: Boolean): Decimal
+    begin
+        // Older operations used Amount for both documents.
+        if IsReplacement or ("Original Amount" = 0) then
+            exit(Amount);
+        exit("Original Amount");
+    end;
 }
