@@ -102,6 +102,14 @@ page 71007 "MTM Posted Inv FEL Desc API"
                     Caption = 'Error Code';
                     Editable = false;
                 }
+                field(mxStampDiagnostic; GetMxStampDiagnostic())
+                {
+                    Editable = false;
+                }
+                field(mxNativeTaxReadiness; GetMxNativeTaxReadiness())
+                {
+                    Editable = false;
+                }
                 field(mxStampReadiness; BuildMxStampReadinessSummary())
                 {
                     Caption = 'MX Stamp Readiness';
@@ -433,6 +441,41 @@ page 71007 "MTM Posted Inv FEL Desc API"
         ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
         ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
     end;
+
+    [ServiceEnabled]
+    procedure RequestMxChainCancellation(substitutionInvoiceNumber: Text; expectedOriginalUuid: Text; expectedReplacementUuid: Text; expectedExternalDocumentNumber: Text; expectedOriginalAmountIncludingVat: Decimal; expectedAmountIncludingVat: Decimal; expectedReplacementDueDate: Date; finalInvoiceNumber: Text; expectedFinalUuid: Text; expectedFinalAmountIncludingVat: Decimal; expectedFinalDueDate: Date; var ActionContext: WebServiceActionContext)
+    var
+        CancellationMgt: Codeunit "MTM MX Cancellation Mgt";
+    begin
+        if (StrLen(substitutionInvoiceNumber) > 20) or (StrLen(finalInvoiceNumber) > 20) or (StrLen(expectedExternalDocumentNumber) > 35) then
+            Error('Invoice identity exceeds Business Central field limits.');
+        CancellationMgt.RequestChainCancellation(Rec."No.", CopyStr(substitutionInvoiceNumber, 1, 20),
+            expectedOriginalUuid, expectedReplacementUuid, CopyStr(expectedExternalDocumentNumber, 1, 35),
+            expectedOriginalAmountIncludingVat, expectedAmountIncludingVat, expectedReplacementDueDate,
+            CopyStr(finalInvoiceNumber, 1, 20), expectedFinalUuid, expectedFinalAmountIncludingVat, expectedFinalDueDate);
+        ActionContext.SetObjectType(ObjectType::Page);
+        ActionContext.SetObjectId(Page::"MTM Posted Inv FEL Desc API");
+        ActionContext.AddEntityKey(Rec.FieldNo(SystemId), Rec.SystemId);
+        ActionContext.SetResultCode(WebServiceActionResultCode::Updated);
+    end;
+    local procedure GetMxNativeTaxReadiness(): Text
+    var
+        StampMgt: Codeunit "MTM MX Secure Stamp Mgt";
+    begin
+        if CompanyName() <> 'MTM_MX_PROD' then
+            exit('');
+        exit(StampMgt.GetNativeTaxReadiness(Rec."No."));
+    end;
+
+    local procedure GetMxStampDiagnostic(): Text
+    var
+        StampMgt: Codeunit "MTM MX Secure Stamp Mgt";
+    begin
+        if CompanyName() <> 'MTM_MX_PROD' then
+            exit('');
+        exit(StampMgt.GetDiagnostic(Rec."No."));
+    end;
+
     local procedure GetInvoiceEmailReadiness(): Text
     var
         InvoiceCustomerEmailMgt: Codeunit "MTM Invoice Customer Email Mgt";

@@ -1,4 +1,4 @@
-"""Review or advance one approved, already-stamped Mexico replacement pair."""
+"""Review or advance one approved, already-stamped Mexico replacement pair or chain."""
 import argparse
 import json
 from datetime import date
@@ -23,6 +23,11 @@ def main() -> None:
     data = json.loads(args.plan.read_text())
     data["amount_including_vat"] = Decimal(str(data["amount_including_vat"]))
     data["replacement_due_date"] = date.fromisoformat(data["replacement_due_date"])
+    for key in ("original_amount_including_vat", "final_amount_including_vat"):
+        if data.get(key) is not None:
+            data[key] = Decimal(str(data[key]))
+    if data.get("final_due_date") is not None:
+        data["final_due_date"] = date.fromisoformat(data["final_due_date"])
     plan = MxReplacement(**data)
     plan.payload()
     load_dotenv()

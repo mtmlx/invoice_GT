@@ -30,6 +30,13 @@ table 71040 "MTM MX Cancellation"
         field(22; "Credit Memo No."; Code[20]) { }
         field(23; "Accounting Attempted At"; DateTime) { }
         field(24; "Original Amount"; Decimal) { }
+        field(25; "Final Invoice No."; Code[20]) { }
+        field(26; "Final UUID"; Text[50]) { }
+        field(27; "Final Amount"; Decimal) { }
+        field(28; "Final Due Date"; Date) { }
+        field(29; "Reason Description"; Text[250]) { }
+        field(30; "Final SAT Checked At"; DateTime) { }
+        field(31; "Final SAT Status"; Text[100]) { }
     }
     keys { key(PK; "Invoice No.") { Clustered = true; } }
 

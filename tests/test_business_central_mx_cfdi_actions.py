@@ -6,7 +6,7 @@ from business_central_client.client import BusinessCentralClient
 
 class FakeBusinessCentralClient(BusinessCentralClient):
     def __init__(self) -> None:
-        self.settings = SimpleNamespace()
+        self.settings = SimpleNamespace(timeout_seconds=30)
         self.posts: list[dict[str, Any]] = []
 
     def post_to_company(
@@ -16,12 +16,14 @@ class FakeBusinessCentralClient(BusinessCentralClient):
         *,
         company_id: str | None = None,
         market: str | None = None,
+        timeout_seconds: int | None = None,
     ) -> dict[str, Any]:
         post = {
             "path": path,
             "payload": payload,
             "company_id": company_id,
             "market": market,
+            "timeout_seconds": timeout_seconds,
         }
         self.posts.append(post)
         return post
@@ -53,6 +55,7 @@ def test_stamp_mx_invoice_posts_empty_payload() -> None:
     )
     assert result["payload"] == {}
     assert result["market"] == "MX"
+    assert result["timeout_seconds"] == 180
 
 
 def test_set_mx_payment_fields_posts_terms_and_method() -> None:
@@ -178,3 +181,19 @@ def test_corrected_cancellation_uses_additive_action_without_changing_legacy(mon
                                                "expectedOriginalAmountIncludingVat": 15307.2})
     assert [call[1] for call in calls] == ["RequestMxCancellation", "RequestMxCorrectedCancellation"]
     assert all(call[2]["market"] == "MX" and call[2]["timeout_seconds"] == 180 for call in calls)
+
+
+def test_chain_cancellation_uses_its_explicit_additive_action(monkeypatch) -> None:
+    client = FakeBusinessCentralClient()
+    calls = []
+    def post(invoice_id, action, **kwargs):
+        calls.append((invoice_id, action, kwargs))
+        return {}
+    monkeypatch.setattr(client, "_post_posted_invoice_fel_action", post)
+    payload = {"expectedAmountIncludingVat": 15307.2,
+               "expectedOriginalAmountIncludingVat": 15307.2,
+               "finalInvoiceNumber": "B_FINAL_CORRECTED",
+               "expectedFinalAmountIncludingVat": 15347.2}
+    client.request_mx_cancellation("old-row", payload)
+    assert calls == [("old-row", "RequestMxChainCancellation",
+                      {"body": payload, "market": "MX", "timeout_seconds": 180})]

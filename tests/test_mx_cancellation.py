@@ -178,3 +178,127 @@ def test_invalid_original_total_blocks_before_reads(amount):
     from dataclasses import replace
     with pytest.raises(ValueError):
         replace(PLAN, original_amount_including_vat=Decimal(amount)).payload()
+
+
+def chain_plan():
+    from dataclasses import replace
+    return replace(PLAN, original_amount_including_vat=Decimal("15307.20"),
+                   final_invoice_number="B_FINAL_CORRECTED",
+                   final_uuid="a0c8d000-0000-4000-8000-000000000010",
+                   final_amount_including_vat=Decimal("15347.20"),
+                   final_due_date=date(2026, 11, 3))
+
+
+def chain_row(state="Pending"):
+    final = chain_plan()
+    return {**row(state), "originalAmount": "15307.20",
+            "finalInvoiceNumber": final.final_invoice_number,
+            "finalUuid": final.final_uuid, "finalAmount": "15347.20",
+            "finalDueDate": "2026-11-03", "finalSatStatus": "Vigente"}
+
+
+def test_chain_payload_keeps_all_three_document_totals_independent():
+    from dataclasses import replace
+    plan = replace(chain_plan(), original_amount_including_vat=Decimal("15000.00"))
+    payload = plan.payload()
+    assert payload["expectedOriginalAmountIncludingVat"] == 15000
+    assert payload["expectedAmountIncludingVat"] == 15307.2
+    assert payload["expectedFinalAmountIncludingVat"] == 15347.2
+    assert payload["finalInvoiceNumber"] == "B_FINAL_CORRECTED"
+    assert payload["expectedFinalDueDate"] == "2026-11-03"
+
+
+@pytest.mark.parametrize("missing", ["final_invoice_number", "final_uuid", "final_amount_including_vat", "final_due_date", "original_amount_including_vat"])
+def test_partial_chain_identity_blocks_before_any_bc_call(missing):
+    from dataclasses import replace
+    bc = FakeBC()
+    with pytest.raises(ValueError, match="complete final identity"):
+        advance_mx_cancellation(bc, replace(chain_plan(), **{missing: None}), apply=True)
+    assert bc.calls == []
+
+
+@pytest.mark.parametrize("field,value", [
+    ("final_invoice_number", PLAN.invoice_number),
+    ("final_invoice_number", PLAN.replacement_number),
+    ("final_uuid", PLAN.original_uuid), ("final_uuid", PLAN.replacement_uuid),
+])
+def test_chain_self_substitution_blocks_before_any_bc_call(field, value):
+    from dataclasses import replace
+    bc = FakeBC()
+    with pytest.raises(ValueError, match="three distinct"):
+        advance_mx_cancellation(bc, replace(chain_plan(), **{field: value}), apply=True)
+    assert bc.calls == []
+
+
+@pytest.mark.parametrize("amount", ["0", "-1", "1.001", "NaN", "Infinity"])
+def test_invalid_final_total_blocks_before_any_bc_call(amount):
+    from dataclasses import replace
+    bc = FakeBC()
+    with pytest.raises(ValueError, match="final total"):
+        advance_mx_cancellation(bc, replace(chain_plan(), final_amount_including_vat=Decimal(amount)), apply=True)
+    assert bc.calls == []
+
+
+@pytest.mark.parametrize("key,value", [
+    ("finalInvoiceNumber", "DIFFERENT_INVOICE"),
+    ("finalUuid", "a0c8d000-0000-4000-8000-000000000011"),
+    ("finalAmount", "15347.21"), ("finalDueDate", "2026-11-04"),
+])
+def test_persisted_chain_identity_drift_stops_before_any_side_effect(key, value):
+    operation = chain_row()
+    operation[key] = value
+    bc = FakeBC(operation)
+    with pytest.raises(ValueError, match="final"):
+        advance_mx_cancellation(bc, chain_plan(), apply=True, finalize_accounting=True)
+    assert bc.calls == []
+
+
+def test_chain_cannot_be_replayed_as_an_ordinary_cancellation():
+    bc = FakeBC(chain_row())
+    with pytest.raises(ValueError, match="unapproved final chain"):
+        advance_mx_cancellation(bc, PLAN, apply=True)
+    assert bc.calls == []
+
+
+def test_completed_first_chain_leg_still_checks_final_activity_without_new_credit():
+    bc = FakeBC(chain_row("Completed"), sat_state="Completed")
+    assert advance_mx_cancellation(bc, chain_plan(), apply=True, finalize_accounting=True)["status"] == "completed"
+    assert bc.calls == ["query"]
+
+
+def test_final_cancellation_blocks_chain_accounting_even_when_original_is_confirmed():
+    bc = FakeBC({**chain_row(), "finalSatStatus": "Cancelado"}, sat_state="Confirmed")
+    with pytest.raises(ValueError, match="not confirmed active"):
+        advance_mx_cancellation(bc, chain_plan(), apply=True, finalize_accounting=True)
+    assert bc.calls == ["query"]
+
+
+def test_chain_completion_requires_the_original_native_zero_balance():
+    bc = FakeBC(chain_row("Completed"), sat_state="Completed")
+    bc.bad_balance = True
+    with pytest.raises(ValueError, match="accounting reversal"):
+        advance_mx_cancellation(bc, chain_plan(), apply=True)
+    assert bc.calls == ["query"]
+
+
+def test_cli_reviews_a_saved_chain_plan_without_connecting_or_applying(tmp_path, monkeypatch, capsys):
+    import json
+    from dataclasses import asdict
+    from types import SimpleNamespace
+    from scripts import advance_mx_cancellation as cli
+
+    saved_plan = tmp_path / "chain.json"
+    saved_plan.write_text(json.dumps(asdict(chain_plan()), default=str))
+    monkeypatch.setattr("sys.argv", ["advance_mx_cancellation", "--plan", str(saved_plan)])
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(cli, "Settings", SimpleNamespace(from_env=lambda: None))
+    monkeypatch.setattr(cli, "BusinessCentralClient", lambda settings: object())
+    def review(bc, plan, *, apply, finalize_accounting):
+        assert apply is False and finalize_accounting is False
+        assert plan.final_due_date == date(2026, 11, 3)
+        return {"status": "review_only", "request": plan.payload()}
+    monkeypatch.setattr(cli, "advance_mx_cancellation", review)
+    cli.main()
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "review_only"
+    assert result["request"]["expectedFinalAmountIncludingVat"] == 15347.2

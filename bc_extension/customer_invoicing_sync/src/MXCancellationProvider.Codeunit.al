@@ -199,6 +199,26 @@ codeunit 71041 "MTM MX Cancellation Provider"
         exit(true);
     end;
 
+    procedure QueryFinalSat(var Operation: Record "MTM MX Cancellation"): Boolean
+    var
+        FinalOperation: Record "MTM MX Cancellation" temporary;
+        Active: Boolean;
+    begin
+        if Operation."Final Invoice No." = '' then
+            exit(true);
+        // A chain is approved only while its final corrected CFDI stays active.
+        // QuerySat's replacement branch is read-only and uses this own amount.
+        FinalOperation := Operation;
+        FinalOperation."Replacement UUID" := Operation."Final UUID";
+        FinalOperation.Amount := Operation."Final Amount";
+        Active := QuerySat(FinalOperation, true);
+        Operation."Final SAT Checked At" := CurrentDateTime();
+        Operation."Final SAT Status" := 'Unconfirmed';
+        if Active then
+            Operation."Final SAT Status" := 'Vigente';
+        exit(Active);
+    end;
+
     procedure ReadSatResponse(Body: Text; var Code: Text; var Status: Text; var CancellationStatus: Text): Boolean
     var
         Document: XmlDocument;
