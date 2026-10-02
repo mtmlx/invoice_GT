@@ -102,8 +102,8 @@
       "charge_name": "Customs Broker",
       "clickup_field_id": "c88a27b6-6325-44bb-983a-3948017061b4",
       "clickup_field_name": "Customs Broker",
-      "bc_item_number": "INT000000016",
-      "bc_description": "CUSTOM AGENT"
+      "bc_item_number": "NAT00000030",
+      "bc_description": "Coordinacion de agente aduanal"
     },
     {
       "charge_name": "Inland Destination",
