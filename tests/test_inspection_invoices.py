@@ -35,7 +35,20 @@ def _task(*, payload: dict | None = None) -> dict:
         "name": "LGDCH91C5VA702240(DRYRUN TEST)",
         "list": {"id": "901707774763"},
         "custom_fields": [
-            {"id": PAYLOAD_FIELD_ID, "name": "Invoice Payload", "value": json.dumps(payload)}
+            {"id": PAYLOAD_FIELD_ID, "name": "Invoice Payload", "value": json.dumps(payload)},
+            {
+                "id": "destination-country",
+                "name": "Destination Country",
+                "type": "drop_down",
+                "value": 0,
+                "type_config": {
+                    "options": [
+                        {"id": "guatemala", "name": "Guatemala", "orderindex": 0},
+                        {"id": "el-salvador", "name": "El Salvador", "orderindex": 1},
+                        {"id": "costa-rica", "name": "Costa Rica", "orderindex": 2},
+                    ]
+                },
+            },
         ],
     }
 
@@ -292,12 +305,26 @@ def test_preview_blocks_customer_country_mismatch_before_issue() -> None:
         }
     )
     task["custom_fields"][0]["value"] = json.dumps(payload)
+    task["custom_fields"][1]["value"] = 1
 
     result = prepare_inspection_invoice_preview(task=task, bc_client=CostaRicaCustomerBC())
 
     assert result["status"] == "customer_destination_country_mismatch"
     assert "CR" in result["message"]
     assert "SV" in result["message"]
+
+
+def test_preview_blocks_payload_destination_that_disagrees_with_clickup() -> None:
+    task = _task()
+    payload = json.loads(task["custom_fields"][0]["value"])
+    payload["destination_country_code"] = "SV"
+    task["custom_fields"][0]["value"] = json.dumps(payload)
+
+    result = prepare_inspection_invoice_preview(task=task, bc_client=_BC())
+
+    assert result["status"] == "payload_destination_country_mismatch"
+    assert "SV" in result["message"]
+    assert "GT" in result["message"]
 
 
 def test_preview_blocks_customer_tax_id_mismatch_before_issue() -> None:

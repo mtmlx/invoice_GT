@@ -186,7 +186,7 @@ def inspection_invoice_sync_readiness() -> dict[str, Any]:
         )
     return {
         "status": "not_ready" if missing_runtime_config else "ready",
-        "release": "inspection-invoice-v8",
+        "release": "inspection-invoice-v9",
         "missing_runtime_config": missing_runtime_config,
         "apply_mode": _env_bool("INSPECTION_INVOICE_WEBHOOK_APPLY", default=False),
         "customer_email_enabled": should_send_invoice_customer_email(os.getenv("INSPECTION_INVOICE_MARKET", "GT").strip().upper() or "GT"),

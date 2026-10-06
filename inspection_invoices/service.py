@@ -19,6 +19,7 @@ from inspection_invoices.canonical import (
 
 DEFAULT_MAGNA_INSPECTIONS_LIST_ID = "901707774763"
 DEFAULT_INSPECTION_PRICE_FIELD_NAMES = ("Previo en origen (USD)",)
+DEFAULT_DESTINATION_COUNTRY_FIELD_NAMES = ("Destination Country",)
 
 
 def prepare_inspection_invoice_preview(
@@ -61,6 +62,26 @@ def prepare_inspection_invoice_preview(
         return _blocked(
             "unsupported_currency",
             f"Inspection invoices support {expected_currency}; payload currency is {payload.currency}.",
+            task,
+            payload=payload,
+            market=market,
+        )
+
+    task_destination_country = _task_destination_country_code(task)
+    if not task_destination_country:
+        return _blocked(
+            "missing_clickup_destination_country",
+            "ClickUp Destination Country is missing or cannot be mapped to an ISO country code.",
+            task,
+            payload=payload,
+            market=market,
+        )
+    if task_destination_country != payload.destination_country_code:
+        return _blocked(
+            "payload_destination_country_mismatch",
+            "Invoice Payload destination_country_code "
+            f"{payload.destination_country_code} does not match ClickUp Destination Country "
+            f"{task_destination_country}.",
             task,
             payload=payload,
             market=market,
@@ -454,6 +475,35 @@ def _inspection_source_price(task: dict[str, Any]) -> Decimal | None:
     return None
 
 
+def _task_destination_country_code(task: dict[str, Any]) -> str | None:
+    configured_id = _env("INSPECTION_INVOICE_DESTINATION_COUNTRY_FIELD_ID", "")
+    configured_names = {
+        _normalize_field_name(name)
+        for name in _env_csv(
+            "INSPECTION_INVOICE_DESTINATION_COUNTRY_FIELD_NAMES",
+            default=DEFAULT_DESTINATION_COUNTRY_FIELD_NAMES,
+        )
+    }
+    for field in task.get("custom_fields") or []:
+        field_id = str(field.get("id") or "").strip()
+        field_name = _normalize_field_name(str(field.get("name") or ""))
+        if not ((configured_id and field_id == configured_id) or field_name in configured_names):
+            continue
+
+        value = field.get("value")
+        option_value = None
+        for option in ((field.get("type_config") or {}).get("options") or []):
+            option_id = option.get("id")
+            option_index = option.get("orderindex")
+            if value is not None and (
+                str(option_id) == str(value) or str(option_index) == str(value)
+            ):
+                option_value = option.get("name")
+                break
+        return _country_code(option_value if option_value is not None else value)
+    return None
+
+
 def _decimal_or_none(value: Any) -> Decimal | None:
     if value is None or str(value).strip() == "":
         return None
@@ -560,6 +610,10 @@ def _customer_country_code(customer: dict[str, Any]) -> str | None:
     raw_value = str(customer.get("country") or customer.get("countryRegionCode") or "").strip()
     if not raw_value:
         return None
+    return _country_code(raw_value)
+
+
+def _country_code(value: Any) -> str | None:
     aliases = {
         "GT": "GT",
         "GUATEMALA": "GT",
@@ -567,13 +621,18 @@ def _customer_country_code(customer: dict[str, Any]) -> str | None:
         "EL SALVADOR": "SV",
         "CR": "CR",
         "COSTA RICA": "CR",
+        "HN": "HN",
+        "HONDURAS": "HN",
+        "PA": "PA",
+        "PANAMA": "PA",
+        "PANAMÁ": "PA",
         "MX": "MX",
         "MEXICO": "MX",
         "US": "US",
         "USA": "US",
         "UNITED STATES": "US",
     }
-    return aliases.get(" ".join(raw_value.upper().replace(".", "").split()))
+    return aliases.get(" ".join(str(value or "").upper().replace(".", "").split()))
 
 
 def _normalized_tax_id(value: Any) -> str:
