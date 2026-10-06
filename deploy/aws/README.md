@@ -63,6 +63,17 @@ Keep `INSPECTION_INVOICE_WEBHOOK_APPLY=false` for the first call. The route read
 the Magna task's `Invoice Payload` field, validates the customer/item/FEL state,
 and returns the proposed BC header and lines without changing either system.
 
+### Required customer identity in Invoice Payload
+
+Inspection invoices fail closed. The payload must include `customer_number`,
+`customer_id`, `customer_tax_id`, and `destination_country_code`. The bridge
+resolves both customer identifiers and requires the BC customer country, tax ID,
+and FEL country to match the payload. It never uses a name-based customer lookup.
+
+Any missing or conflicting identity, country, or tax value blocks the workflow
+before BC or ClickUp is changed. An existing invoice reference under a different
+BC customer is also a blocking conflict, never a recoverable retry.
+
 ## Operational Guardrails
 
 - `CLICKUP_WEBHOOK_TOKEN` must be set and used as the ClickUp webhook bearer token.

@@ -26,9 +26,11 @@ class InspectionInvoicePayload:
     quantity: Decimal
     currency: str
     inspection_date: date
+    destination_country_code: str
+    customer_number: str
+    customer_id: str
+    customer_tax_id: str
     market: str | None = None
-    customer_number: str | None = None
-    customer_id: str | None = None
     vendor: str | None = None
     quote_reference: str | None = None
     linked_quote_task_id: str | None = None
@@ -84,7 +86,9 @@ def parse_inspection_invoice_payload(
 
     task_id = _required_text(raw_payload, "task_id")
     expected_task_id = str(task.get("id") or "").strip()
-    if task_id != expected_task_id:
+    # ClickUp dynamic tokens can be serialized as task:<id>. Preserve the task
+    # binding while accepting that transport-only prefix.
+    if task_id.removeprefix("task:") != expected_task_id:
         raise InspectionInvoicePayloadError("task_id does not match the ClickUp task.")
 
     try:
@@ -109,9 +113,14 @@ def parse_inspection_invoice_payload(
         quantity=quantity,
         currency=currency,
         inspection_date=inspection_date,
+        destination_country_code=_country_code(
+            _required_text(raw_payload, "destination_country_code"),
+            "destination_country_code",
+        ),
+        customer_number=_required_text(raw_payload, "customer_number").upper(),
+        customer_id=_required_text(raw_payload, "customer_id"),
+        customer_tax_id=_required_text(raw_payload, "customer_tax_id"),
         market=market,
-        customer_number=_optional_text(raw_payload.get("customer_number")),
-        customer_id=_optional_text(raw_payload.get("customer_id")),
         vendor=_optional_text(raw_payload.get("vendor")),
         quote_reference=_optional_text(raw_payload.get("quote_reference")),
         linked_quote_task_id=_optional_text(raw_payload.get("linked_quote_task_id")),
@@ -138,3 +147,27 @@ def _positive_decimal(value: Any, label: str) -> Decimal:
     if not parsed.is_finite() or parsed <= 0:
         raise InspectionInvoicePayloadError(f"{label} must be a positive number.")
     return parsed
+
+
+def _country_code(value: str, label: str) -> str:
+    """Normalize the limited country values accepted by this invoice workflow."""
+    normalized = " ".join(value.strip().upper().replace(".", "").split())
+    aliases = {
+        "GT": "GT",
+        "GUATEMALA": "GT",
+        "SV": "SV",
+        "EL SALVADOR": "SV",
+        "CR": "CR",
+        "COSTA RICA": "CR",
+        "MX": "MX",
+        "MEXICO": "MX",
+        "US": "US",
+        "USA": "US",
+        "UNITED STATES": "US",
+    }
+    country_code = aliases.get(normalized)
+    if not country_code:
+        raise InspectionInvoicePayloadError(
+            f"{label} must use a supported ISO country code (for example, GT, SV, or CR)."
+        )
+    return country_code

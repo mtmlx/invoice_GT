@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from dataclasses import asdict
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from business_central_client.client import BusinessCentralClient
@@ -16,6 +18,7 @@ from inspection_invoices.canonical import (
 
 
 DEFAULT_MAGNA_INSPECTIONS_LIST_ID = "901707774763"
+DEFAULT_INSPECTION_PRICE_FIELD_NAMES = ("Previo en origen (USD)",)
 
 
 def prepare_inspection_invoice_preview(
@@ -63,11 +66,56 @@ def prepare_inspection_invoice_preview(
             market=market,
         )
 
-    customer = _resolve_customer(payload=payload, bc_client=bc_client, market=market)
+    source_price = _inspection_source_price(task)
+    if source_price is not None and source_price != payload.unit_price:
+        return _blocked(
+            "inspection_price_mismatch",
+            "Invoice Payload unit_price "
+            f"{payload.unit_price:.2f} does not match ClickUp Previo en origen (USD) "
+            f"{source_price:.2f}.",
+            task,
+            payload=payload,
+            market=market,
+        )
+
+    try:
+        customer = _resolve_customer(payload=payload, bc_client=bc_client, market=market)
+    except CustomerIdentityError as exc:
+        return _blocked("customer_identity_mismatch", str(exc), task, payload=payload, market=market)
     if not customer:
         return _blocked(
             "missing_bc_customer",
-            f"Business Central customer {payload.customer_name!r} was not found in market {market}.",
+            "Business Central customer was not found from the required immutable customer identity.",
+            task,
+            payload=payload,
+            market=market,
+        )
+
+    customer_number = str(customer.get("number") or "").strip().upper()
+    customer_country = _customer_country_code(customer)
+    if not customer_country:
+        return _blocked(
+            "missing_customer_country",
+            f"BC customer {customer_number or customer.get('id')} does not have a country code.",
+            task,
+            payload=payload,
+            market=market,
+        )
+    if customer_country != payload.destination_country_code:
+        return _blocked(
+            "customer_destination_country_mismatch",
+            "BC customer "
+            f"{customer_number or customer.get('id')} is in {customer_country}, but the payload destination is "
+            f"{payload.destination_country_code}.",
+            task,
+            payload=payload,
+            market=market,
+        )
+    customer_tax_id = _normalized_tax_id(customer.get("taxRegistrationNumber"))
+    if not customer_tax_id or customer_tax_id != _normalized_tax_id(payload.customer_tax_id):
+        return _blocked(
+            "customer_tax_id_mismatch",
+            f"BC customer {customer_number or customer.get('id')} does not match the payload customer_tax_id.",
             task,
             payload=payload,
             market=market,
@@ -91,7 +139,12 @@ def prepare_inspection_invoice_preview(
             payload=payload,
             market=market,
         )
-    fel = _validate_gt_customer_fel(customer=customer, bc_client=bc_client, market=market)
+    fel = _validate_gt_customer_fel(
+        customer=customer,
+        bc_client=bc_client,
+        market=market,
+        expected_country_code=payload.destination_country_code,
+    )
     if fel["status"] != "ready":
         return _blocked(fel["status"], fel["message"], task, payload=payload, market=market)
 
@@ -114,14 +167,22 @@ def prepare_inspection_invoice_preview(
         )
 
     external_document_number = _idempotency_reference(task, payload)
-    customer_number = str(customer.get("number") or "").strip()
-    existing = _find_existing_invoice(
+    existing = _find_existing_invoice_family(
         bc_client=bc_client,
         market=market,
-        external_document_number=external_document_number,
-        customer_number=customer_number or None,
+        external_document_number_prefix=external_document_number,
     )
     if existing:
+        existing_customer_number = str(existing.get("customerNumber") or "").strip().upper()
+        if existing_customer_number and existing_customer_number != customer_number:
+            return _blocked(
+                "conflicting_invoice_reference",
+                "An invoice already exists for this inspection task under BC customer "
+                f"{existing_customer_number}, not the resolved customer {customer_number}.",
+                task,
+                payload=payload,
+                market=market,
+            )
         return {
             "status": "duplicate_invoice",
             "message": "A Business Central invoice already exists for this inspection task.",
@@ -144,10 +205,6 @@ def prepare_inspection_invoice_preview(
     }
     line_payloads = [
         {
-            "lineType": "Comment",
-            "description": f"MTM INSPECTION DATE {payload.inspection_date.isoformat()}",
-        },
-        {
             "lineType": "Item",
             "lineObjectNumber": item.get("number") or payload.bc_item,
             "itemId": item["id"],
@@ -155,7 +212,7 @@ def prepare_inspection_invoice_preview(
             "quantity": float(payload.quantity),
             "unitPrice": float(payload.unit_price),
             "taxCode": _env("INSPECTION_INVOICE_TAX_CODE", "NO IVA"),
-        },
+        }
     ]
     return {
         "status": "dry_run_ready",
@@ -186,6 +243,10 @@ def issue_inspection_invoice(
 ) -> dict[str, Any]:
     """Create, post, and FEL-stamp a preflighted inspection sales invoice."""
     preview = prepare_inspection_invoice_preview(task=task, bc_client=bc_client, today=today)
+    if preview.get("status") == "duplicate_invoice":
+        recovered = _recover_existing_stamped_invoice(preview=preview, bc_client=bc_client)
+        if recovered is not None:
+            return recovered
     if preview.get("status") != "dry_run_ready":
         return {**preview, "completed_stages": []}
 
@@ -240,54 +301,173 @@ def issue_inspection_invoice(
         }
 
 
+def _recover_existing_stamped_invoice(
+    *,
+    preview: dict[str, Any],
+    bc_client: BusinessCentralClient,
+) -> dict[str, Any] | None:
+    """Allow ClickUp delivery to resume after a prior successful BC issue."""
+    existing = preview.get("existing_invoice")
+    if not isinstance(existing, dict):
+        return None
+
+    invoice_id = str(existing.get("id") or "").strip()
+    invoice_number = str(existing.get("number") or "").strip()
+    market = str(preview.get("market") or "").strip().upper()
+    if not invoice_id or not invoice_number.startswith("GTFVR") or not market:
+        return None
+
+    fel_row = bc_client.get_posted_invoice_fel_description_by_number(
+        invoice_number,
+        market=market,
+    )
+    if str((fel_row or {}).get("electronicDocumentStatus") or "").strip().lower() != "stamp received":
+        return None
+
+    external_document_number = str(
+        existing.get("externalDocumentNumber") or preview.get("external_document_number") or ""
+    ).strip()
+    return {
+        "status": "applied",
+        "market": market,
+        "preview": preview,
+        "created_invoices": [],
+        "finalized_invoices": [
+            {
+                "invoice_group": "INT",
+                "number": invoice_number,
+                "externalDocumentNumber": external_document_number,
+                "posted_invoice_after_stamp": existing,
+                "custom_api_row_after_stamp": fel_row,
+            }
+        ],
+        "completed_stages": ["recover_existing_posted_invoice"],
+        "recovered_existing_invoice": True,
+    }
+
+
 def _resolve_customer(
     *, payload: InspectionInvoicePayload, bc_client: BusinessCentralClient, market: str
 ) -> dict[str, Any] | None:
-    if payload.customer_id:
-        customer = bc_client.get_customer_by_id(payload.customer_id, market=market)
-        if customer:
-            return customer
-    if payload.customer_number:
-        escaped_customer_number = payload.customer_number.replace("'", "''")
-        rows = bc_client.find_entities(
-            "customers", filters=f"number eq '{escaped_customer_number}'", top=2, market=market
+    """Resolve both immutable identifiers and refuse all name-based fallbacks."""
+    by_id = bc_client.get_customer_by_id(payload.customer_id, market=market)
+    escaped_customer_number = payload.customer_number.replace("'", "''")
+    by_number_rows = bc_client.find_entities(
+        "customers", filters=f"number eq '{escaped_customer_number}'", top=2, market=market
+    )
+    if len(by_number_rows) != 1:
+        raise CustomerIdentityError(
+            f"BC customer number {payload.customer_number} did not resolve to exactly one customer."
         )
-        if len(rows) == 1:
-            return rows[0]
-        if len(rows) > 1:
-            raise ValueError(f"More than one BC customer matched {payload.customer_number}.")
-    return bc_client.resolve_customer_by_name(payload.customer_name, market=market)
+    by_number = by_number_rows[0]
+    if not by_id:
+        raise CustomerIdentityError(f"BC customer id {payload.customer_id} was not found.")
+
+    payload_customer_id = payload.customer_id.strip().lower()
+    resolved_ids = {
+        str(by_id.get("id") or "").strip().lower(),
+        str(by_number.get("id") or "").strip().lower(),
+    }
+    resolved_numbers = {
+        str(by_id.get("number") or "").strip().upper(),
+        str(by_number.get("number") or "").strip().upper(),
+    }
+    if (
+        not payload_customer_id
+        or payload_customer_id not in resolved_ids
+        or resolved_ids != {payload_customer_id}
+        or resolved_numbers != {payload.customer_number}
+    ):
+        raise CustomerIdentityError(
+            "Payload customer_id and customer_number do not resolve to the same BC customer."
+        )
+    return by_id
 
 
 def _validate_gt_customer_fel(
-    *, customer: dict[str, Any], bc_client: BusinessCentralClient, market: str
+    *,
+    customer: dict[str, Any],
+    bc_client: BusinessCentralClient,
+    market: str,
+    expected_country_code: str,
 ) -> dict[str, Any]:
-    if market != "GT":
-        return {"status": "ready"}
     customer_number = str(customer.get("number") or "").strip()
     row = bc_client.get_customer_invoicing_by_number(customer_number, market=market)
     if not row:
         return {"status": "missing_customer_invoicing_row", "message": "BC customer invoicing data is unavailable."}
     if row.get("felCountryReady") is not True or not str(row.get("resolvedFelCountryCode") or "").strip():
         return {"status": "missing_fel_country_source", "message": "BC customer is not FEL country ready."}
-    return {"status": "ready", "resolved_fel_country": row.get("resolvedFelCountryCode")}
+    resolved_fel_country = str(row.get("resolvedFelCountryCode") or "").strip().upper()
+    if resolved_fel_country != expected_country_code:
+        return {
+            "status": "fel_destination_country_mismatch",
+            "message": "BC FEL country "
+            f"{resolved_fel_country} does not match payload destination {expected_country_code}.",
+        }
+    return {"status": "ready", "resolved_fel_country": resolved_fel_country}
 
 
-def _find_existing_invoice(
-    *, bc_client: BusinessCentralClient, market: str, external_document_number: str, customer_number: str | None
+def _find_existing_invoice_family(
+    *, bc_client: BusinessCentralClient, market: str, external_document_number_prefix: str
 ) -> dict[str, Any] | None:
-    escaped_reference = external_document_number.replace("'", "''")
-    filters = [f"externalDocumentNumber eq '{escaped_reference}'"]
-    if customer_number:
-        escaped_customer_number = customer_number.replace("'", "''")
-        filters.append(f"customerNumber eq '{escaped_customer_number}'")
-    rows = bc_client.find_entities("salesInvoices", filters=" and ".join(filters), top=5, market=market)
-    return rows[0] if rows else None
+    escaped_prefix = external_document_number_prefix.replace("'", "''")
+    rows = bc_client.find_entities(
+        "salesInvoices",
+        filters=f"startswith(externalDocumentNumber, '{escaped_prefix}')",
+        top=20,
+        market=market,
+    )
+    active_rows = [
+        row
+        for row in rows
+        if str(row.get("status") or "").strip().lower() not in {"canceled", "cancelled"}
+    ]
+    if not active_rows:
+        return None
+    active_rows.sort(
+        key=lambda row: str(row.get("lastModifiedDateTime") or row.get("postingDate") or ""),
+        reverse=True,
+    )
+    return active_rows[0]
 
 
 def _idempotency_reference(task: dict[str, Any], payload: InspectionInvoicePayload) -> str:
     task_reference = str(task.get("custom_id") or task.get("id") or payload.task_id).strip()
     return f"{task_reference}-INT"
+
+
+def _inspection_source_price(task: dict[str, Any]) -> Decimal | None:
+    """Return the populated ClickUp origin-inspection price, when available."""
+    configured_id = _env("INSPECTION_INVOICE_PRICE_FIELD_ID", "")
+    configured_names = {
+        _normalize_field_name(name)
+        for name in _env_csv(
+            "INSPECTION_INVOICE_PRICE_FIELD_NAMES",
+            default=DEFAULT_INSPECTION_PRICE_FIELD_NAMES,
+        )
+    }
+    for field in task.get("custom_fields") or []:
+        field_id = str(field.get("id") or "").strip()
+        field_name = _normalize_field_name(str(field.get("name") or ""))
+        if (configured_id and field_id == configured_id) or field_name in configured_names:
+            return _decimal_or_none(field.get("value"))
+    return None
+
+
+def _decimal_or_none(value: Any) -> Decimal | None:
+    if value is None or str(value).strip() == "":
+        return None
+    normalized = re.sub(r"[^0-9.\-]", "", str(value))
+    if not normalized:
+        return None
+    try:
+        return Decimal(normalized)
+    except InvalidOperation:
+        return None
+
+
+def _normalize_field_name(value: str) -> str:
+    return " ".join(value.strip().lower().split())
 
 
 def _invoice_date(*, payload: InspectionInvoicePayload, today: date | None) -> date:
@@ -306,7 +486,11 @@ def _wait_for_posted_invoice(
         if invoice and number.startswith("GTFVR"):
             return invoice
         if reference:
-            invoice = bc_client.get_posted_sales_invoice_by_external_document_number(reference, market=market)
+            invoice = _find_existing_invoice_family(
+                bc_client=bc_client,
+                market=market,
+                external_document_number_prefix=reference,
+            )
             if invoice:
                 return invoice
         time.sleep(2)
@@ -346,6 +530,14 @@ def _env(name: str, default: str) -> str:
     return os.getenv(name, default).strip() or default
 
 
+def _env_csv(name: str, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    values = tuple(value.strip() for value in raw_value.split(",") if value.strip())
+    return values or default
+
+
 def _env_bool(name: str, *, default: bool) -> bool:
     raw_value = os.getenv(name, str(default)).strip().lower()
     return raw_value not in {"0", "false", "no", "off"}
@@ -358,6 +550,34 @@ def _payload_summary(payload: InspectionInvoicePayload) -> dict[str, Any]:
     summary["line_amount"] = float(payload.line_amount)
     summary["inspection_date"] = payload.inspection_date.isoformat()
     return summary
+
+
+class CustomerIdentityError(ValueError):
+    """Raised when immutable customer identifiers cannot be proven consistent."""
+
+
+def _customer_country_code(customer: dict[str, Any]) -> str | None:
+    raw_value = str(customer.get("country") or customer.get("countryRegionCode") or "").strip()
+    if not raw_value:
+        return None
+    aliases = {
+        "GT": "GT",
+        "GUATEMALA": "GT",
+        "SV": "SV",
+        "EL SALVADOR": "SV",
+        "CR": "CR",
+        "COSTA RICA": "CR",
+        "MX": "MX",
+        "MEXICO": "MX",
+        "US": "US",
+        "USA": "US",
+        "UNITED STATES": "US",
+    }
+    return aliases.get(" ".join(raw_value.upper().replace(".", "").split()))
+
+
+def _normalized_tax_id(value: Any) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
 
 
 def _blocked(
