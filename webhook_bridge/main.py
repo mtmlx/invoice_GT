@@ -1062,9 +1062,17 @@ async def clickup_inspection_invoice_sync(
 
     payload = await _safe_json(request)
     nested_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
-    task_id = extract_task_id(payload) or extract_task_id(nested_payload) or extract_task_id_from_path(
+    event_task_id = payload.get("id")
+    nested_task_id = nested_payload.get("id")
+    task_id = (
+        extract_task_id(payload)
+        or (str(event_task_id).strip() if event_task_id is not None else None)
+        or extract_task_id(nested_payload)
+        or (str(nested_task_id).strip() if nested_task_id is not None else None)
+        or extract_task_id_from_path(
         request.url.path,
         base_path="/clickup/webhooks/inspection-invoice-sync",
+        )
     )
     if not task_id:
         return {"status": "ignored", "reason": "missing_task_id"}
