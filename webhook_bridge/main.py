@@ -1061,7 +1061,8 @@ async def clickup_inspection_invoice_sync(
         raise HTTPException(status_code=401, detail="Invalid webhook token.")
 
     payload = await _safe_json(request)
-    task_id = extract_task_id(payload) or extract_task_id_from_path(
+    nested_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+    task_id = extract_task_id(payload) or extract_task_id(nested_payload) or extract_task_id_from_path(
         request.url.path,
         base_path="/clickup/webhooks/inspection-invoice-sync",
     )
@@ -1084,9 +1085,14 @@ async def clickup_inspection_invoice_sync(
 
         preview = prepare_inspection_invoice_preview(task=task, bc_client=bc)
         apply_mode = _env_bool("INSPECTION_INVOICE_WEBHOOK_APPLY", default=False)
-        if not apply_mode or preview.get("status") != "dry_run_ready":
+        preview_status = str(preview.get("status") or "").strip()
+        # A duplicate posted invoice can be a recoverable delivery retry: the
+        # issuer resolves it to the existing FEL-stamped document and resumes
+        # the ClickUp PDF/comment/status writeback without issuing another one.
+        apply_eligible_statuses = {"dry_run_ready", "duplicate_invoice"}
+        if not apply_mode or preview_status not in apply_eligible_statuses:
             result = {
-                "status": "processed" if preview.get("status") == "dry_run_ready" else "blocked",
+                "status": "processed" if preview_status == "dry_run_ready" else "blocked",
                 "mode": "dry_run",
                 "task_id": task.get("id"),
                 "result": preview,
@@ -1101,35 +1107,17 @@ async def clickup_inspection_invoice_sync(
             return result
 
         summary = summarize_task_for_customer_mapping(task)
-        invoice_settings = InvoiceAutomationSettings.from_env()
-        issued, customer_email_action = _deliver_customer_email_if_enabled(
-            clickup=clickup,
-            bc_client=bc,
-            clickup_summary=summary,
-            invoice_result=issued,
-            settings=invoice_settings,
-        )
-        if customer_email_action == "failed":
-            result = {
-                "status": "failed",
-                "mode": "apply",
-                "task_id": task.get("id"),
-                "result": issued,
-            }
-            _log_webhook_result(task_id=str(task.get("id") or task_id), result=result)
-            return result
-
         delivery = finalize_clickup_issued_invoices(
             clickup=clickup,
             bc_client=bc,
             clickup_summary=summary,
             invoice_result=issued,
-            settings=invoice_settings,
+            settings=InvoiceAutomationSettings.from_env(),
             workspace_id=team_id,
-            mark_status=False,
+            mark_status=True,
         )
         writeback = _write_inspection_invoice_number(clickup=clickup, task=task, issued=issued)
-        final_status = _mark_inspection_invoice_complete(clickup=clickup, task=task)
+        final_status = delivery.get("final_status_update")
         result = {
             "status": "processed",
             "mode": "apply",
@@ -1138,7 +1126,6 @@ async def clickup_inspection_invoice_sync(
             "delivery": delivery,
             "writeback": writeback,
             "final_status_update": final_status,
-            "customer_email_action": customer_email_action,
         }
         _log_webhook_result(task_id=str(task.get("id") or task_id), result=result)
         return result
