@@ -1,8 +1,9 @@
 """Regression canary for the two omitted MTMLXGT-32106 INT charges.
 
 ClickUp amounts are shipment totals, not per-container rates. Exact-item
-posted BC history uses quantity one and NO IVA for both services. These tests
-only build previews/use fakes; they never create production fiscal documents.
+historical BC examples used quantity one; the user-approved rule now follows
+ocean freight: container quantity with total/count unit prices and NO IVA.
+These tests only build previews/use fakes, never production fiscal documents.
 """
 
 from copy import deepcopy
@@ -81,7 +82,7 @@ def test_exact_gt_mapping_and_runtime_configuration(monkeypatch):
         assert mapping.bc_item_number == item
         assert mapping.bc_description == description
         assert mapping.tax_group == "NO IVA"
-        assert mapping.quantity_basis == "shipment"
+        assert mapping.quantity_basis == "container_count"
         assert mapping.require_field_id is True
 
 
@@ -99,8 +100,11 @@ def test_full_canary_includes_seven_sales_fields_and_preserves_totals():
     by_item = {line["lineObjectNumber"]: line for line in result["proposed_bc_line_payloads"]}
     for _, (_, item, description, amount) in EXPECTED.items():
         assert by_item[item]["description"] == description
-        assert by_item[item]["quantity"] == 1
-        assert by_item[item]["unitPrice"] == float(amount)
+        assert by_item[item]["quantity"] == 6
+        assert by_item[item]["unitPrice"] == float(amount) / 6
+        assert by_item[item]["quantity"] * by_item[item]["unitPrice"] == float(amount)
+    assert by_item["INT000000026"]["quantity"] == 6
+    assert by_item["INT000000026"]["unitPrice"] == 2800
     assert result["proposed_bc_payload"]["paymentTermsId"] == "term-30-days"
     assert "dueDate" not in result["proposed_bc_payload"]
 
@@ -113,6 +117,71 @@ def test_exact_uuid_matching_survives_renamed_field_and_excludes_cost_fields():
     assert result["status"] == "dry_run_ready"
     assert result["invoice_validation"]["expected_total"] == 31980.00
     assert len(result["line_sources"]) == 7
+
+
+@pytest.mark.parametrize("count", [1, 2, 3, 6, 7])
+def test_new_charges_follow_freight_count_without_multiplying_source_total(count):
+    summary, settings = canary()
+    summary["custom_fields"]["Number of Containers"]["value"] = str(count)
+    result = preview(summary, settings)
+    assert result["status"] == "dry_run_ready"
+    sources = {source["item_number"]: source for source in result["line_sources"]}
+    for field_id, (_, item, _, amount) in EXPECTED.items():
+        line = sources[item]
+        assert line["source_field_id"] == field_id
+        assert line["quantity"] == sources["INT000000026"]["quantity"] == count
+        assert line["quantity_basis"] == "container_count"
+        assert line["unit_price"] == pytest.approx(float(amount) / count)
+        assert round(line["quantity"] * line["unit_price"], 2) == float(amount)
+    assert result["invoice_validation"]["expected_total"] == 31980
+
+
+@pytest.mark.parametrize("name", ["Priority Loading", "OBS"])
+@pytest.mark.parametrize("count", [None, "0", "-1", "1.5", "invalid"])
+def test_new_container_charges_block_without_valid_count_or_list(name, count):
+    summary, settings = canary()
+    for mapping in settings.charge_mappings:
+        if mapping.clickup_field_name != name:
+            summary["custom_fields"][mapping.clickup_field_name]["value"] = "0"
+    summary["custom_fields"]["Number of Containers"]["value"] = count
+    client = FakeBCInvoiceClient()
+    result = apply_clickup_bc_sales_invoice(
+        clickup_summary=summary, bc_client=client, settings=settings, today=date(2026, 10, 9)
+    )
+    assert result["status"] == "invalid_line_quantity"
+    assert "Number of Containers is missing or invalid" in result["message"]
+    assert client.created_headers == client.created_lines == []
+
+
+def test_new_charges_share_freight_container_list_fallback():
+    summary, settings = canary()
+    summary["custom_fields"].pop("Number of Containers")
+    summary["custom_fields"]["Container(s) number(s)/"] = {"value": "ONEU4568905, ONEU4520938"}
+    result = preview(summary, settings)
+    assert result["status"] == "dry_run_ready"
+    by_item = {source["item_number"]: source for source in result["line_sources"]}
+    assert by_item["INT000000026"]["quantity"] == 2
+    assert by_item["INT000000035"]["quantity"] == 2
+    assert by_item["INT000000035"]["unit_price"] == 3000
+    assert by_item["INT000000034"]["quantity"] == 2
+    assert by_item["INT000000034"]["unit_price"] == 990
+
+
+def test_new_charges_preserve_freight_air_product_quantity_fallback():
+    summary, settings = canary()
+    summary["custom_fields"]["Product/"] = {
+        "type": "drop_down", "value": 6,
+        "type_config": {"options": [{"id": "product-air", "name": "AIR", "orderindex": 6}]},
+    }
+    summary["custom_fields"]["Agent's Reference"] = {"value": "AWB-READINESS-ONLY"}
+    summary["custom_fields"].pop("Number of Containers")
+    result = preview(summary, settings)
+    assert result["status"] == "dry_run_ready"
+    sources = {source["item_number"]: source for source in result["line_sources"]}
+    for _, item, _, amount in EXPECTED.values():
+        assert sources[item]["quantity"] == sources["INT000000026"]["quantity"] == 1
+        assert sources[item]["unit_price"] == float(amount)
+        assert sources[item]["quantity_basis"] == "shipment"
 
 
 @pytest.mark.parametrize("name", ["Priority Loading", "OBS"])
@@ -216,7 +285,7 @@ def test_guarded_retry_verifies_lines_and_allows_matching_recovery(problem):
     result = preview(summary, settings)
     invoice = {"id": "full-int", "number": "GTFVR-FULL", "invoice_group": "INT",
                "totalAmountIncludingTax": 27180}
-    lines = [{"lineObjectNumber": item, "quantity": 1, "unitPrice": float(amount), "taxPercent": 0}
+    lines = [{"lineObjectNumber": item, "quantity": 6, "unitPrice": float(amount) / 6, "taxPercent": 0}
              for _, item, _, amount in EXPECTED.values()]
     if problem == "missing_item":
         lines.pop()
@@ -227,8 +296,8 @@ def test_guarded_retry_verifies_lines_and_allows_matching_recovery(problem):
     elif problem == "discount":
         lines[0]["discountPercent"] = 1
     elif problem == "quantity":
-        lines[0]["quantity"] = 6
-        lines[0]["unitPrice"] /= 6
+        lines[0]["quantity"] = 1
+        lines[0]["unitPrice"] *= 6
     elif problem == "duplicate_line":
         lines.append(dict(lines[0]))
 
@@ -265,7 +334,7 @@ def test_guarded_all_group_cannot_bypass_review(problem):
     class LinesClient:
         def get_posted_sales_invoice_lines(self, invoice_id, *, market=None):
             assert problem is None, "Invalid recovery must stop before further line reads"
-            return [{"lineObjectNumber": item, "quantity": 1, "unitPrice": float(amount), "taxPercent": 0}
+            return [{"lineObjectNumber": item, "quantity": 6, "unitPrice": float(amount) / 6, "taxPercent": 0}
                     for _, item, _, amount in EXPECTED.values()]
 
     validation = _validate_guarded_duplicate_retry(

@@ -64,7 +64,7 @@
       "bc_item_number": "INT000000035",
       "bc_description": "PRIORITY LOADING",
       "require_field_id": true,
-      "quantity_basis": "shipment",
+      "quantity_basis": "container_count",
       "tax_group": "NO IVA"
     },
     {
@@ -74,7 +74,7 @@
       "bc_item_number": "INT000000034",
       "bc_description": "OBS",
       "require_field_id": true,
-      "quantity_basis": "shipment",
+      "quantity_basis": "container_count",
       "tax_group": "NO IVA"
     },
     {
