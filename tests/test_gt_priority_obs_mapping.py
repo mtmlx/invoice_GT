@@ -16,6 +16,8 @@ import pytest
 from clickup_integration.invoice_sync import (
     InvoiceAutomationSettings,
     apply_clickup_bc_sales_invoice,
+    issue_clickup_bc_sales_invoice,
+    _validate_guarded_duplicate_retry,
     load_invoice_charge_mappings,
     prepare_clickup_bc_sales_invoice_preview,
 )
@@ -186,3 +188,87 @@ def test_mapping_change_does_not_relax_customer_specific_int_split_hold():
     settings = replace(settings, int_split_customer_numbers=("C00067",))
     result = preview(deepcopy(summary), settings)
     assert result["status"] == "customer_int_split_validation_failed"
+
+
+def test_issuance_cannot_reuse_old_incomplete_invoices():
+    summary, settings = canary()
+
+    class OldInvoiceClient(FakeBCInvoiceClient):
+        def get_posted_invoice_fel_description_by_number(self, number, *, market=None):
+            return {"number": number, "electronicDocumentStatus": "Stamp Received"}
+
+    client = OldInvoiceClient(existing_invoices=[{
+        "id": "old-int", "number": "GTFVR0005109", "status": "Open",
+        "externalDocumentNumber": "PO-7788-INT", "totalAmountIncludingTax": 19200,
+    }])
+    result = issue_clickup_bc_sales_invoice(
+        clickup_summary=summary, bc_client=client, settings=settings, today=date(2026, 10, 9)
+    )
+    assert result["status"] == "duplicate_invoice_requires_review"
+    assert result["failed_stage"] == "verify_existing_invoice_lines"
+    assert result["completed_stages"] == []
+    assert client.created_headers == client.created_lines == []
+
+
+@pytest.mark.parametrize("problem", [None, "missing_item", "amount", "tax", "discount", "read_failure", "quantity", "duplicate_line"])
+def test_guarded_retry_verifies_lines_and_allows_matching_recovery(problem):
+    summary, settings = canary()
+    result = preview(summary, settings)
+    invoice = {"id": "full-int", "number": "GTFVR-FULL", "invoice_group": "INT",
+               "totalAmountIncludingTax": 27180}
+    lines = [{"lineObjectNumber": item, "quantity": 1, "unitPrice": float(amount), "taxPercent": 0}
+             for _, item, _, amount in EXPECTED.values()]
+    if problem == "missing_item":
+        lines.pop()
+    elif problem == "amount":
+        lines[0]["unitPrice"] = 5999
+    elif problem == "tax":
+        lines[0]["taxPercent"] = 12
+    elif problem == "discount":
+        lines[0]["discountPercent"] = 1
+    elif problem == "quantity":
+        lines[0]["quantity"] = 6
+        lines[0]["unitPrice"] /= 6
+    elif problem == "duplicate_line":
+        lines.append(dict(lines[0]))
+
+    class LinesClient:
+        def get_posted_sales_invoice_lines(self, invoice_id, *, market=None):
+            assert invoice_id == "full-int" and market == "GT"
+            if problem == "read_failure":
+                raise ValueError("Readback unavailable")
+            return lines
+
+    validation = _validate_guarded_duplicate_retry(
+        result=result, invoices=[invoice], config=settings, bc_client=LinesClient()
+    )
+    assert validation["status"] == ("passed" if problem is None else "failed")
+
+
+@pytest.mark.parametrize("problem", [None, "stale_total", "mixed_tax", "missing_proposal"])
+def test_guarded_all_group_cannot_bypass_review(problem):
+    summary, settings = canary()
+    settings = replace(settings, split_invoice_by_item_prefix=False)
+    if problem != "mixed_tax":
+        for mapping in settings.charge_mappings:
+            if mapping.bc_item_number.startswith("NAT"):
+                summary["custom_fields"][mapping.clickup_field_name]["value"] = "0"
+    result = preview(summary, settings)
+    assert result["invoice_groups"] == ["ALL"]
+    invoice = {"id": "all-invoice", "number": "GTFVR-ALL", "invoice_group": "ALL",
+               "totalAmountIncludingTax": result["proposed_bc_invoices"][0]["total"]}
+    if problem == "stale_total":
+        invoice["totalAmountIncludingTax"] = 1
+    elif problem == "missing_proposal":
+        result["proposed_bc_invoices"] = []
+
+    class LinesClient:
+        def get_posted_sales_invoice_lines(self, invoice_id, *, market=None):
+            assert problem is None, "Invalid recovery must stop before further line reads"
+            return [{"lineObjectNumber": item, "quantity": 1, "unitPrice": float(amount), "taxPercent": 0}
+                    for _, item, _, amount in EXPECTED.values()]
+
+    validation = _validate_guarded_duplicate_retry(
+        result=result, invoices=[invoice], config=settings, bc_client=LinesClient()
+    )
+    assert validation["status"] == ("passed" if problem is None else "failed")

@@ -1066,6 +1066,20 @@ def issue_clickup_bc_sales_invoice(
     )
     completed_stages: list[str] = []
     retry_existing_posted_invoices = _existing_duplicate_invoices_for_retry(result)
+    if retry_existing_posted_invoices:
+        retry_validation = _validate_guarded_duplicate_retry(
+            result=result, invoices=retry_existing_posted_invoices,
+            config=config, bc_client=bc_client,
+        )
+        if retry_validation["status"] != "passed":
+            return {
+                **result,
+                "status": "duplicate_invoice_requires_review",
+                "message": "Existing invoices do not match the guarded current charges; a reviewed correction is required.",
+                "existing_invoice_validation": retry_validation,
+                "completed_stages": [],
+                "failed_stage": "verify_existing_invoice_lines",
+            }
     if result.get("status") != "applied" and not retry_existing_posted_invoices:
         return {
             **result,
@@ -1239,6 +1253,75 @@ def _verify_mx_ocean_invoice(bc_client, invoice_id, market, proposed):
     lines = bc_client.get_posted_sales_invoice_lines(invoice_id, market=market)
     mx_ocean_policy.verify_invoice(invoice, lines, proposed["proposed_bc_payload"], proposed["proposed_bc_line_payloads"])
     return invoice
+
+
+def _validate_guarded_duplicate_retry(*, result, invoices, config, bc_client):
+    """Do not recover/deliver stale fiscal documents for exact-ID charges.
+
+    Only mappings explicitly opting into require_field_id are affected. Legacy
+    recovery remains unchanged; matching new invoices can still be recovered.
+    All validation is read-only and precedes posting, certification and email.
+    """
+    guarded_ids = {m.clickup_field_id for m in config.charge_mappings if m.require_field_id}
+    guarded_sources = [s for s in result.get("line_sources") or [] if s.get("source_field_id") in guarded_ids]
+    errors = []
+    for invoice in invoices:
+        group = invoice.get("invoice_group")
+        proposed = next((p for p in result.get("proposed_bc_invoices") or [] if p.get("invoice_group") == group), None)
+        if proposed is None:
+            if guarded_sources:
+                errors.append(f"Existing {invoice.get('number')} has no matching reviewed invoice proposal.")
+            continue
+        proposal_sources = proposed.get("line_sources") or []
+        sources = [s for s in proposal_sources if s.get("source_field_id") in guarded_ids]
+        if not sources and any(s.get("invoice_group") == group or group == "ALL" for s in guarded_sources):
+            errors.append(f"Existing {invoice.get('number')} lacks guarded source evidence in its proposal.")
+            continue
+        if not sources:
+            continue
+        number = invoice.get("number")
+        if any(s.get("tax_group") != "NO IVA" for s in proposal_sources):
+            errors.append(f"Existing {number} mixes guarded charges with unverified tax treatment; reviewed recovery is required.")
+            continue
+        total = _parse_decimal(invoice.get("totalAmountIncludingTax"))
+        if not proposed or total is None or not _amounts_equal(float(total), float(proposed["total"])):
+            errors.append(f"Existing {number} total does not match the current {group} preview.")
+            continue
+        try:
+            lines = bc_client.get_posted_sales_invoice_lines(invoice["id"], market=result["market"])
+            expected = {}
+            for source in sources:
+                item = source["item_number"]
+                expected.setdefault(item, []).append(source)
+            for item, item_sources in expected.items():
+                amount = sum((Decimal(str(source["amount"])) for source in item_sources), Decimal("0"))
+                matched = [line for line in lines if line.get("lineObjectNumber") == item]
+                if not matched:
+                    errors.append(f"Existing {number} is missing guarded item {item}.")
+                    continue
+                if len(matched) != len(item_sources):
+                    errors.append(f"Existing {number} item {item} line count does not match the reviewed charges.")
+                    continue
+                expected_pairs = sorted((Decimal(str(s["quantity"])), Decimal(str(s["unit_price"]))) for s in item_sources)
+                actual_pairs = []
+                actual = Decimal("0")
+                for line in matched:
+                    if _parse_decimal(line.get("taxPercent")) != Decimal("0"):
+                        raise ValueError(f"Guarded item {item} requires verified zero IVA.")
+                    if _parse_decimal(line.get("discountPercent", 0)) != Decimal("0"):
+                        raise ValueError(f"Guarded item {item} has an unreviewed discount.")
+                    quantity, price = _parse_decimal(line.get("quantity")), _parse_decimal(line.get("unitPrice"))
+                    if quantity is None or price is None:
+                        raise ValueError(f"Guarded item {item} has incomplete quantity/price evidence.")
+                    actual_pairs.append((quantity, price))
+                    actual += quantity * price
+                if sorted(actual_pairs) != expected_pairs:
+                    errors.append(f"Existing {number} item {item} quantity/unit price does not match the reviewed shipment basis.")
+                if not _amounts_equal(float(actual), float(amount)):
+                    errors.append(f"Existing {number} item {item} amount does not match the current charge.")
+        except Exception as exc:
+            errors.append(f"Existing {number} guarded lines could not be verified: {exc}")
+    return {"status": "failed" if errors else "passed", "errors": errors}
 
 
 def _existing_duplicate_invoices_for_retry(result: dict[str, Any]) -> list[dict[str, Any]]:

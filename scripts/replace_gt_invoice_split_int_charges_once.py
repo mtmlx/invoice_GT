@@ -24,6 +24,9 @@ from scripts.replace_gt_invoices_once import (
     _combine_invoices_for_writeback,
     _force_ready_invoice_status,
     _parse_issue_datetime_overrides,
+    _assert_replacement_invoice_matches_proposal,
+    _require_replacement_reference_preflight,
+    _require_valid_replacement_preflight,
     _wait_for_fel_row,
     _wait_for_fel_status_value,
     _write_audit_file,
@@ -96,6 +99,14 @@ def main() -> None:
         clickup_summary=summary,
         bc_client=bc,
         settings=settings,
+    )
+    _require_valid_replacement_preflight(preview_before_cancel, invoice_group="INT")
+    split_preview_before_cancel = _build_split_int_preview(preview_before_cancel)
+    _require_valid_replacement_preflight(split_preview_before_cancel, invoice_group="INT")
+    _require_replacement_reference_preflight(
+        preview=split_preview_before_cancel, bc=bc, market=market,
+        old_invoice_numbers=[args.old_invoice],
+        allow_matching_replacements=True,
     )
 
     try:
@@ -220,6 +231,14 @@ def main() -> None:
 
 
 def _build_split_int_preview(preview: dict[str, Any]) -> dict[str, Any]:
+    try:
+        _require_valid_replacement_preflight(preview, invoice_group="INT")
+    except ValueError as exc:
+        return {
+            **preview,
+            "status": "source_preview_not_ready",
+            "message": str(exc),
+        }
     if preview.get("status") == "duplicate_invoice":
         preview = {
             **preview,
@@ -271,6 +290,27 @@ def _build_split_int_preview(preview: dict[str, Any]) -> dict[str, Any]:
             "int_charge_line_count": len(charge_lines),
             "int_line_source_count": len(charge_sources),
         }
+    supported_charges = {
+        str(charge).strip()
+        for split in SPLIT_CHARGES
+        for charge in split["charges"]
+    }
+    unexpected_charges = sorted({
+        str(source.get("charge_name") or "").strip() or "unnamed INT charge"
+        for source in charge_sources
+        if str(source.get("charge_name") or "").strip() not in supported_charges
+    })
+    if unexpected_charges:
+        return {
+            **preview,
+            "status": "unexpected_split_charges",
+            "message": (
+                "The approved INT split does not cover every source charge; "
+                "refusing to omit: " + ", ".join(unexpected_charges)
+            ),
+            "unexpected_int_charges": unexpected_charges,
+            "supported_int_charges": sorted(supported_charges),
+        }
 
     base_header = dict(int_invoice["proposed_bc_payload"])
     base_reference = str(base_header.get("externalDocumentNumber") or preview.get("reference") or "").strip()
@@ -317,13 +357,7 @@ def _build_split_int_preview(preview: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
-    expected_total = _sum_line_amounts(
-        [
-            line
-            for line, source in zip(charge_lines, charge_sources, strict=True)
-            if str(source.get("charge_name") or "").strip() in used_charge_names
-        ]
-    )
+    expected_total = _sum_line_amounts(charge_lines)
     proposed_total = _sum_line_amounts(
         [
             line
@@ -408,6 +442,7 @@ def issue_split_preview_invoice(
                 invoice=existing_invoice,
                 reference=reference,
                 expected_total=expected_total,
+                expected_header=proposed_invoice["proposed_bc_payload"],
             )
             posted_invoice = existing_invoice
             if not _looks_posted_invoice_number(posted_invoice.get("number")):
@@ -599,7 +634,14 @@ def _assert_existing_invoice_matches_expected_total(
     invoice: dict[str, Any],
     reference: str,
     expected_total: float,
+    expected_header: dict[str, Any] | None = None,
 ) -> None:
+    if expected_header is not None:
+        _assert_replacement_invoice_matches_proposal(
+            invoice=invoice, reference=reference, expected_total=expected_total,
+            expected_header=expected_header,
+        )
+        return
     raw_total = invoice.get("totalAmountIncludingTax")
     if raw_total is None:
         raw_total = invoice.get("totalAmountExcludingTax")

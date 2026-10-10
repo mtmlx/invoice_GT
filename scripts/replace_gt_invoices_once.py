@@ -70,6 +70,15 @@ def main() -> None:
         bc_client=bc,
         settings=settings,
     )
+    _require_valid_replacement_preflight(
+        preview_before_cancel,
+        invoice_group=None if args.only_group == "ALL" else args.only_group,
+    )
+    _require_replacement_reference_preflight(
+        preview=preview_before_cancel, bc=bc, market=market,
+        old_invoice_numbers=args.old_invoice,
+        invoice_group=None if args.only_group == "ALL" else args.only_group,
+    )
 
     cancellation_results = []
     for invoice_number in args.old_invoice:
@@ -164,6 +173,114 @@ def main() -> None:
     output_path = _write_audit_file(args.output_dir, args.task_id, result)
     result["audit_file"] = str(output_path)
     print(json.dumps(result, indent=2, sort_keys=True, default=str))
+
+
+def _require_valid_replacement_preflight(
+    preview: dict[str, Any],
+    *,
+    invoice_group: str | None = None,
+) -> None:
+    """Require a complete replacement plan before changing an old document."""
+    blockers = []
+    if preview.get("status") not in {"dry_run_ready", "duplicate_invoice"}:
+        blockers.append(f"source preview status is {preview.get('status')!r}")
+    validation = preview.get("invoice_validation") or {}
+    if validation.get("status") != "passed" or validation.get("errors"):
+        blockers.append("invoice validation has not passed")
+    proposals = preview.get("proposed_bc_invoices") or []
+    if not proposals:
+        blockers.append("replacement invoice proposals are empty")
+    for proposal in proposals:
+        if not isinstance(proposal, dict) or not proposal.get("proposed_bc_payload"):
+            blockers.append("a replacement invoice header is missing")
+            continue
+        billable_lines = [
+            line
+            for line in proposal.get("proposed_bc_line_payloads") or []
+            if isinstance(line, dict)
+            and str(line.get("lineType") or "").strip().lower() in {"item", "account"}
+        ]
+        if not billable_lines:
+            blockers.append("a replacement invoice has no billable lines")
+    if invoice_group and not any(
+        isinstance(proposal, dict)
+        and str(proposal.get("invoice_group") or "").strip().upper() == invoice_group.upper()
+        for proposal in proposals
+    ):
+        blockers.append(f"replacement invoice group {invoice_group} is missing")
+    if blockers:
+        raise ValueError(
+            "Replacement preflight blocked before cancellation; no cancellation was requested: "
+            + "; ".join(blockers)
+        )
+
+
+def _assert_replacement_invoice_matches_proposal(
+    *, invoice: dict[str, Any], reference: str, expected_total: float,
+    expected_header: dict[str, Any],
+) -> None:
+    if str(invoice.get("externalDocumentNumber") or "").strip() != reference:
+        raise ValueError(f"Active invoice lookup returned a conflicting reference for {reference}.")
+    raw_total = invoice.get("totalAmountIncludingTax")
+    if raw_total is None or round(float(raw_total), 2) != round(expected_total, 2):
+        raise ValueError(f"Active invoice for {reference} has an unknown or conflicting total.")
+    if str(invoice.get("currencyCode") or "").strip().upper() != str(expected_header.get("currencyCode") or "").strip().upper():
+        raise ValueError(f"Active invoice for {reference} has a conflicting currency.")
+    for key in ("customerNumber", "customerId"):
+        expected = str(expected_header.get(key) or "").strip().casefold()
+        if expected and str(invoice.get(key) or "").strip().casefold() != expected:
+            raise ValueError(f"Active invoice for {reference} has a conflicting {key}.")
+
+
+def _require_replacement_reference_preflight(
+    *, preview: dict[str, Any], bc: BusinessCentralClient, market: str,
+    old_invoice_numbers: list[str], invoice_group: str | None = None,
+    allow_matching_replacements: bool = False,
+) -> None:
+    """Read every replacement reference before cancellation, exempting named originals only."""
+    eligible_old_numbers = {str(number).strip().upper() for number in old_invoice_numbers if str(number).strip()}
+    if not eligible_old_numbers:
+        raise ValueError("Replacement reference preflight blocked before cancellation: original invoice numbers are missing.")
+    for proposal in preview.get("proposed_bc_invoices") or []:
+        if invoice_group and str(proposal.get("invoice_group") or "").strip().upper() != invoice_group.upper():
+            continue
+        header = proposal["proposed_bc_payload"]
+        reference = str(header.get("externalDocumentNumber") or "").strip()
+        if not reference or not header.get("currencyCode") or not (header.get("customerNumber") or header.get("customerId")):
+            raise ValueError("Replacement reference preflight blocked before cancellation: replacement reference, customer or currency is missing.")
+        escaped = reference.replace("'", "''")
+        rows = bc.find_entities("salesInvoices", filters=f"externalDocumentNumber eq '{escaped}'", top=100, market=market)
+        if len(rows) >= 100:
+            raise ValueError("Replacement reference preflight blocked before cancellation: invoice lookup may be truncated.")
+        surviving_active_rows = [
+            invoice for invoice in rows
+            if _normalized_status(invoice.get("status")) not in {"canceled", "cancelled"}
+            and str(invoice.get("number") or "").strip().upper() not in eligible_old_numbers
+        ]
+        if len(surviving_active_rows) > 1:
+            raise ValueError(
+                f"Replacement reference preflight blocked before cancellation: more than one active "
+                f"replacement invoice would survive for {reference}."
+            )
+        for invoice in rows:
+            if _normalized_status(invoice.get("status")) in {"canceled", "cancelled"}:
+                continue
+            if str(invoice.get("externalDocumentNumber") or "").strip() != reference:
+                raise ValueError("Replacement reference preflight blocked before cancellation: invoice reference lookup is inconsistent.")
+            if str(invoice.get("number") or "").strip().upper() in eligible_old_numbers:
+                continue
+            try:
+                _assert_replacement_invoice_matches_proposal(
+                    invoice=invoice, reference=reference,
+                    expected_total=float(proposal["total"]), expected_header=header,
+                )
+                if not allow_matching_replacements:
+                    raise ValueError(
+                        f"Active invoice {invoice.get('number')} for {reference} is not an original "
+                        "explicitly selected for cancellation; this replacement flow cannot reuse it."
+                    )
+            except (TypeError, ValueError, KeyError) as exc:
+                raise ValueError(f"Replacement reference preflight blocked before cancellation: {exc}") from exc
 
 
 def cancel_invoice_if_needed(
