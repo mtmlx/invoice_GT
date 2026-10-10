@@ -58,6 +58,26 @@
       "tax_group": "NO IVA"
     },
     {
+      "charge_name": "Priority Loading",
+      "clickup_field_id": "005071cb-d840-4adf-8a30-6e726c375e2c",
+      "clickup_field_name": "Priority Loading",
+      "bc_item_number": "INT000000035",
+      "bc_description": "PRIORITY LOADING",
+      "require_field_id": true,
+      "quantity_basis": "shipment",
+      "tax_group": "NO IVA"
+    },
+    {
+      "charge_name": "OBS",
+      "clickup_field_id": "a6f9e8c1-f92d-4088-89fe-7be84473802d",
+      "clickup_field_name": "OBS",
+      "bc_item_number": "INT000000034",
+      "bc_description": "OBS",
+      "require_field_id": true,
+      "quantity_basis": "shipment",
+      "tax_group": "NO IVA"
+    },
+    {
       "charge_name": "VGM",
       "clickup_field_id": "6c946b7c-0f08-4d3b-bf89-c739e0712b46",
       "clickup_field_name": "VGM",

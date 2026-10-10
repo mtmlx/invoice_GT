@@ -33,6 +33,7 @@ class InvoiceChargeMapping:
     quantity_basis: str = "shipment"
     quantity_field_name: str | None = None
     quantity_field_id: str | None = None
+    require_field_id: bool = False
 
 
 @dataclass(frozen=True)
@@ -2070,6 +2071,18 @@ def _build_mapped_charge_input(
         field_name=mapping.clickup_field_name,
         field_id=mapping.clickup_field_id,
     )
+    if mapping.require_field_id and raw_value and not any(
+        details.get("id") == mapping.clickup_field_id
+        for details in custom_fields.values()
+    ):
+        return {
+            "charge_name": mapping.charge_name,
+            "amount": None,
+            "error": (
+                f"Charge field {source_field or mapping.charge_name} does not match required "
+                f"ClickUp field ID {mapping.clickup_field_id}; refusing name-only mapping."
+            ),
+        }
     if not raw_value:
         return {
             "charge_name": mapping.charge_name,
@@ -2811,6 +2824,11 @@ def load_invoice_charge_mappings(path: str | os.PathLike[str]) -> tuple[InvoiceC
         bc_item_number = str(row.get("bc_item_number") or "").strip()
         bc_description = str(row.get("bc_description") or charge_name).strip()
         tax_group = str(row.get("tax_group") or "").strip() or None
+        require_field_id = row.get("require_field_id", False)
+        if not isinstance(require_field_id, bool):
+            raise ValueError(
+                f"Invoice charge mapping row {index} require_field_id must be a boolean."
+            )
         quantity_basis = str(row.get("quantity_basis") or "shipment").strip().lower() or "shipment"
         if quantity_basis not in {"shipment", "container_count"}:
             raise ValueError(
@@ -2843,6 +2861,7 @@ def load_invoice_charge_mappings(path: str | os.PathLike[str]) -> tuple[InvoiceC
                 quantity_basis=quantity_basis,
                 quantity_field_name=str(row.get("quantity_field_name") or "").strip() or None,
                 quantity_field_id=str(row.get("quantity_field_id") or "").strip() or None,
+                require_field_id=require_field_id,
             )
         )
 
