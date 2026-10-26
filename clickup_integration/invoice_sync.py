@@ -14,6 +14,7 @@ from typing import Any
 from business_central_client.client import BusinessCentralClient
 from clickup_integration import mx_ocean_policy
 from clickup_integration.customer_rules import field_value
+from clickup_integration.invoice_customer_resolution import resolve_linked_crm_invoice_customer
 from clickup_integration.mapping import resolve_dropdown_field
 from clickup_integration.tagomago_boundary import generic_invoice_tagomago_blocker
 from clickup_integration.writeback import prepare_clickup_bc_invoice_writeback
@@ -386,6 +387,15 @@ def prepare_clickup_bc_sales_invoice_preview(
         customer_id=customer_id,
         customer_number=customer_number,
     )
+    if customer_resolution["status"] == "invalid_linked_crm_customer":
+        return {
+            "status": "customer_resolution_failed",
+            "message": customer_resolution["message"],
+            "market": market,
+            "currency": currency,
+            "task_status": task_status,
+            "customer_resolution": customer_resolution,
+        }
     if customer_resolution["status"] == "ambiguous":
         return {
             "status": "ambiguous_customer",
@@ -2557,6 +2567,16 @@ def _resolve_invoice_customer(
             "customer_name": None,
             "source_field": None,
             "source_field_id": None,
+        }
+
+    linked_customer = resolve_linked_crm_invoice_customer(
+        custom_fields=custom_fields, customer_name=customer_name,
+        bc_client=bc_client, market=market,
+    )
+    if linked_customer is not None:
+        return {
+            **linked_customer, "source_field": source_field,
+            "source_field_id": source_field_id,
         }
 
     try:
